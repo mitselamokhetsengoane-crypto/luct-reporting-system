@@ -11,20 +11,18 @@ const ratingRoutes = require('./routes/ratings');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enhanced CORS configuration for production
+// Enhanced CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
+    if (!origin) return callback(null, true); // mobile apps or curl
+
     const allowedOrigins = [
-      process.env.CLIENT_URL,
-      process.env.CLIENT_URL_DEV,
-      'https://luct-reporting-system-2-i83i.onrender.com', // Replace with your actual frontend URL
-      'http://localhost:3000'
+      process.env.CLIENT_URL,        // Production frontend URL from .env
+      process.env.CLIENT_URL_DEV,    // Development frontend URL from .env
+      'http://localhost:3000'        // Local dev
     ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -54,28 +52,23 @@ app.use('/api/complaints', complaintRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/ratings', ratingRoutes);
 
-// Public Dashboard Route - Updated for your schema
+// Public Dashboard Route
 app.get('/api/public/dashboard', async (req, res) => {
   try {
     const pool = require('./config/database');
-    
-    // Get total reports count
+
     const reportsResult = await pool.query('SELECT COUNT(*) FROM reports');
     const totalReports = parseInt(reportsResult.rows[0].count);
-    
-    // Get total students count
+
     const studentsResult = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'student'");
     const totalStudents = parseInt(studentsResult.rows[0].count);
-    
-    // Get total lecturers count (including PRL, PL, FMG)
+
     const lecturersResult = await pool.query("SELECT COUNT(*) FROM users WHERE role IN ('lecturer', 'prl', 'pl', 'fmg')");
     const totalLecturers = parseInt(lecturersResult.rows[0].count);
-    
-    // Get total courses count
+
     const coursesResult = await pool.query('SELECT COUNT(*) FROM courses');
     const totalCourses = parseInt(coursesResult.rows[0].count);
-    
-    // Get recent activities (last 5 reports with course and lecturer info)
+
     const activitiesResult = await pool.query(`
       SELECT r.*, c.course_name, u.name as lecturer_name, cl.faculty
       FROM reports r 
@@ -85,33 +78,19 @@ app.get('/api/public/dashboard', async (req, res) => {
       ORDER BY r.created_at DESC 
       LIMIT 5
     `);
-    
+
     const recentActivities = activitiesResult.rows.map(report => ({
       type: 'report',
       description: `${report.lecturer_name || 'Lecturer'} submitted report for ${report.course_name || 'Course'}`,
       time: formatTimeAgo(report.created_at)
     }));
-    
-    // Get faculty statistics - updated to use classes table for faculty info
+
     const facultyStats = [
-      { 
-        faculty: 'FICT', 
-        reports: await getFacultyReportCount('FICT'),
-        students: await getFacultyStudentCount('FICT')
-      },
-      { 
-        faculty: 'FBMG', 
-        reports: await getFacultyReportCount('FBMG'),
-        students: await getFacultyStudentCount('FBMG')
-      },
-      { 
-        faculty: 'FENG', 
-        reports: await getFacultyReportCount('FENG'),
-        students: await getFacultyStudentCount('FENG')
-      }
+      { faculty: 'FICT', reports: await getFacultyReportCount('FICT'), students: await getFacultyStudentCount('FICT') },
+      { faculty: 'FBMG', reports: await getFacultyReportCount('FBMG'), students: await getFacultyStudentCount('FBMG') },
+      { faculty: 'FENG', reports: await getFacultyReportCount('FENG'), students: await getFacultyStudentCount('FENG') }
     ];
-    
-    // Get popular courses (courses with most reports)
+
     const popularCoursesResult = await pool.query(`
       SELECT c.course_name, c.course_code, COUNT(r.id) as report_count
       FROM courses c 
@@ -120,13 +99,13 @@ app.get('/api/public/dashboard', async (req, res) => {
       ORDER BY report_count DESC 
       LIMIT 5
     `);
-    
+
     const popularCourses = popularCoursesResult.rows.map(course => ({
       name: course.course_name,
       code: course.course_code,
       reports: parseInt(course.report_count)
     }));
-    
+
     res.json({
       totalReports,
       totalStudents,
@@ -136,17 +115,14 @@ app.get('/api/public/dashboard', async (req, res) => {
       facultyStats,
       popularCourses
     });
-    
+
   } catch (error) {
     console.error('Error generating public dashboard data:', error);
-    res.status(500).json({ 
-      message: 'Error loading dashboard data',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Error loading dashboard data', error: error.message });
   }
 });
 
-// Updated helper functions for your schema
+// Helper functions
 async function getFacultyReportCount(faculty) {
   try {
     const pool = require('./config/database');
@@ -176,7 +152,6 @@ async function getFacultyStudentCount(faculty) {
 
 function formatTimeAgo(dateString) {
   if (!dateString) return 'Recently';
-  
   try {
     const date = new Date(dateString);
     const now = new Date();
@@ -184,7 +159,7 @@ function formatTimeAgo(dateString) {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins} minutes ago`;
     if (diffHours < 24) return `${diffHours} hours ago`;
@@ -195,45 +170,22 @@ function formatTimeAgo(dateString) {
   }
 }
 
-// Test route
+// Test and health routes
 app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'LUCT Reporting System API is running!',
-    environment: process.env.NODE_ENV,
-    timestamp: new Date().toISOString()
-  });
+  res.json({ message: 'LUCT Reporting System API is running!', environment: process.env.NODE_ENV, timestamp: new Date().toISOString() });
 });
 
-// Health check route
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    service: 'LUCT Reporting System API',
-    environment: process.env.NODE_ENV,
-    version: process.env.APP_VERSION
-  });
+  res.json({ status: 'OK', timestamp: new Date().toISOString(), service: 'LUCT Reporting System API', environment: process.env.NODE_ENV, version: process.env.APP_VERSION });
 });
 
-// Database health check
 app.get('/api/health/db', async (req, res) => {
   try {
     const pool = require('./config/database');
     const result = await pool.query('SELECT NOW() as time, version() as version');
-    res.json({ 
-      status: 'OK', 
-      database: 'Connected',
-      time: result.rows[0].time,
-      version: result.rows[0].version,
-      environment: process.env.NODE_ENV
-    });
+    res.json({ status: 'OK', database: 'Connected', time: result.rows[0].time, version: result.rows[0].version, environment: process.env.NODE_ENV });
   } catch (error) {
-    res.status(500).json({ 
-      status: 'ERROR', 
-      database: 'Disconnected',
-      error: error.message,
-      environment: process.env.NODE_ENV
-    });
+    res.status(500).json({ status: 'ERROR', database: 'Disconnected', error: error.message, environment: process.env.NODE_ENV });
   }
 });
 
@@ -254,20 +206,14 @@ app.get('/', (req, res) => {
 
 // Handle 404
 app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.originalUrl,
-    method: req.method
-  });
+  res.status(404).json({ error: 'Route not found', path: req.originalUrl, method: req.method });
 });
 
-// Error handling middleware
+// Global error handler
 app.use((error, req, res, next) => {
   console.error('Global Error Handler:', error);
   res.status(error.status || 500).json({
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Something went wrong!' 
-      : error.message,
+    error: process.env.NODE_ENV === 'production' ? 'Something went wrong!' : error.message,
     ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
   });
 });
@@ -275,9 +221,9 @@ app.use((error, req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
-  console.log('📊 Public dashboard endpoint: /api/public/dashboard');
-  console.log('🔧 Health check: /api/health');
-  console.log('🗄️  Database health: /api/health/db');
-  console.log('📝 Test endpoint: /api/test');
-  console.log('📍 Server URL: http://0.0.0.0:' + PORT);
+  console.log(`📊 Public dashboard endpoint: /api/public/dashboard`);
+  console.log(`🔧 Health check: /api/health`);
+  console.log(`🗄️  Database health: /api/health/db`);
+  console.log(`📝 Test endpoint: /api/test`);
+  console.log(`📍 Server URL: http://0.0.0.0:${PORT}`);
 });
