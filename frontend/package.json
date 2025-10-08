@@ -2,20 +2,21 @@
   "name": "luct-reporting-frontend",
   "version": "1.0.0",
   "description": "LUCT Reporting System Frontend",
-  "homepage": "https://your-frontend-app.onrender.com",
+  "homepage": ".",
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
     "axios": "^1.5.0",
-    "react-router-dom": "^6.15.0"
+    "react-router-dom": "^6.15.0",
+    "cross-env": "^7.0.3"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "build:prod": "cross-env NODE_ENV=production react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "build:prod": "NODE_ENV=production npm run build"
+    "eject": "react-scripts eject"
   },
   "browserslist": {
     "production": [
