@@ -20,7 +20,7 @@ const corsOptions = {
     const allowedOrigins = [
       process.env.CLIENT_URL,
       process.env.CLIENT_URL_DEV,
-      'https://your-frontend-app.onrender.com', // Replace with your actual frontend URL
+      'https://luct-reporting-system-2-i83i.onrender.com', // Replace with your actual frontend URL
       'http://localhost:3000'
     ];
     
