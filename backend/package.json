@@ -10,7 +10,8 @@
     "create-db": "psql -U postgres -c 'CREATE DATABASE luct_reporting;'",
     "drop-db": "psql -U postgres -c 'DROP DATABASE IF EXISTS luct_reporting;'",
     "reset-db": "npm run drop-db && npm run create-db && npm run init-db",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    "render-build": "echo 'Build completed'"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -32,6 +33,6 @@
   "author": "LUCT Development Team",
   "license": "MIT",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }

@@ -7,12 +7,45 @@ const reportRoutes = require('./routes/reports');
 const complaintRoutes = require('./routes/complaints');
 const assignmentRoutes = require('./routes/assignments');
 const ratingRoutes = require('./routes/ratings');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Enhanced CORS configuration for production
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      process.env.CLIENT_URL,
+      process.env.CLIENT_URL_DEV,
+      'https://your-frontend-app.onrender.com', // Replace with your actual frontend URL
+      'http://localhost:3000'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Security headers
+app.use((req, res, next) => {
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  res.header('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -20,6 +53,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/ratings', ratingRoutes);
+
 // Public Dashboard Route - Updated for your schema
 app.get('/api/public/dashboard', async (req, res) => {
   try {
@@ -42,7 +76,6 @@ app.get('/api/public/dashboard', async (req, res) => {
     const totalCourses = parseInt(coursesResult.rows[0].count);
     
     // Get recent activities (last 5 reports with course and lecturer info)
-    // Updated query to get faculty from classes table instead of reports
     const activitiesResult = await pool.query(`
       SELECT r.*, c.course_name, u.name as lecturer_name, cl.faculty
       FROM reports r 
@@ -117,7 +150,6 @@ app.get('/api/public/dashboard', async (req, res) => {
 async function getFacultyReportCount(faculty) {
   try {
     const pool = require('./config/database');
-    // Updated to join with classes table to get faculty information
     const result = await pool.query(`
       SELECT COUNT(*) 
       FROM reports r 
@@ -165,7 +197,11 @@ function formatTimeAgo(dateString) {
 
 // Test route
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'LUCT Reporting System API is running!' });
+  res.json({ 
+    message: 'LUCT Reporting System API is running!',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Health check route
@@ -173,7 +209,9 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    service: 'LUCT Reporting System API'
+    service: 'LUCT Reporting System API',
+    environment: process.env.NODE_ENV,
+    version: process.env.APP_VERSION
   });
 });
 
@@ -186,21 +224,60 @@ app.get('/api/health/db', async (req, res) => {
       status: 'OK', 
       database: 'Connected',
       time: result.rows[0].time,
-      version: result.rows[0].version
+      version: result.rows[0].version,
+      environment: process.env.NODE_ENV
     });
   } catch (error) {
     res.status(500).json({ 
       status: 'ERROR', 
       database: 'Disconnected',
-      error: error.message 
+      error: error.message,
+      environment: process.env.NODE_ENV
     });
   }
 });
 
-app.listen(PORT, () => {
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Welcome to LUCT Reporting System API',
+    version: process.env.APP_VERSION,
+    environment: process.env.NODE_ENV,
+    endpoints: {
+      health: '/api/health',
+      test: '/api/test',
+      database: '/api/health/db',
+      public: '/api/public/dashboard'
+    }
+  });
+});
+
+// Handle 404
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Route not found',
+    path: req.originalUrl,
+    method: req.method
+  });
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Global Error Handler:', error);
+  res.status(error.status || 500).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'Something went wrong!' 
+      : error.message,
+    ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   console.log('📊 Public dashboard endpoint: /api/public/dashboard');
   console.log('🔧 Health check: /api/health');
   console.log('🗄️  Database health: /api/health/db');
   console.log('📝 Test endpoint: /api/test');
+  console.log('📍 Server URL: http://0.0.0.0:' + PORT);
 });

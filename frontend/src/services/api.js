@@ -1,8 +1,19 @@
 import axios from 'axios';
 
+// Determine API URL based on environment
+const getApiBaseUrl = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.REACT_APP_API_URL || 'https://your-backend-app.onrender.com/api';
+  }
+  return process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+};
+
 const API = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 15000, // Added timeout
+  baseURL: getApiBaseUrl(),
+  timeout: 30000, // Increased timeout for production
+  headers: {
+    'Content-Type': 'application/json',
+  }
 });
 
 // Request interceptor with enhanced logging
@@ -12,11 +23,13 @@ API.interceptors.request.use((req) => {
     req.headers.Authorization = `Bearer ${token}`;
   }
   
-  // Enhanced logging
-  console.log(`🔄 API Request: ${req.method?.toUpperCase()} ${req.url}`, {
-    headers: req.headers,
-    data: req.data
-  });
+  // Enhanced logging for development only
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`🔄 API Request: ${req.method?.toUpperCase()} ${req.url}`, {
+      headers: req.headers,
+      data: req.data
+    });
+  }
   
   return req;
 }, (error) => {
@@ -27,9 +40,11 @@ API.interceptors.request.use((req) => {
 // Enhanced response interceptor for error handling
 API.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`, {
-      data: response.data
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ API Response: ${response.status} ${response.config.url}`, {
+        data: response.data
+      });
+    }
     return response;
   },
   (error) => {
@@ -39,13 +54,13 @@ API.interceptors.response.use(
       status: error.response?.status,
       statusText: error.response?.statusText,
       message: error.message,
-      responseData: error.response?.data,
       timeout: error.code === 'ECONNABORTED' ? 'Request timeout' : 'No timeout'
     });
 
     if (error.response?.status === 401) {
       console.warn('🚨 Unauthorized access - redirecting to login');
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
       window.location.href = '/login';
     }
     
@@ -53,7 +68,7 @@ API.interceptors.response.use(
     const enhancedError = new Error(
       error.response?.data?.message || 
       error.message || 
-      'Network error occurred'
+      'Network error occurred. Please check your connection.'
     );
     enhancedError.status = error.response?.status;
     enhancedError.data = error.response?.data;
@@ -325,5 +340,8 @@ export const retryRequest = async (requestFn, maxRetries = 3, delay = 1000) => {
     }
   }
 };
+
+// Export the base URL for use in other parts of the app
+export const API_BASE_URL = getApiBaseUrl();
 
 export default API;
