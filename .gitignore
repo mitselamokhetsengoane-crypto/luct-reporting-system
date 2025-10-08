@@ -4,11 +4,20 @@ backend/node_modules/
 frontend/node_modules/
 
 # Environment files
-.env
+*.env
 
 # Build output
 frontend/build/
+backend/build/
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Optional: coverage reports
+coverage/
