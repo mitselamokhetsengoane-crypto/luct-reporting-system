@@ -11,29 +11,48 @@ const ratingRoutes = require('./routes/ratings');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enhanced CORS configuration
+// Enhanced CORS configuration - FIXED
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // mobile apps or curl
-
-    const allowedOrigins = [
-      process.env.CLIENT_URL,        // Production frontend URL from .env
-      process.env.CLIENT_URL_DEV,    // Development frontend URL from .env
-      'http://localhost:3000'        // Local dev
-    ];
-
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'https://luct-reporting-system-3-tpuc.onrender.com', // Your actual frontend URL
+    'http://localhost:3000',
+    'http://localhost:5000'
+  ],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200
 };
 
-// Middleware
+// Apply CORS middleware
 app.use(cors(corsOptions));
+
+// Handle pre-flight requests
+app.options('*', cors(corsOptions));
+
+// Additional CORS headers
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    'https://luct-reporting-system-3-tpuc.onrender.com',
+    'http://localhost:3000'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
+// Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -172,20 +191,42 @@ function formatTimeAgo(dateString) {
 
 // Test and health routes
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'LUCT Reporting System API is running!', environment: process.env.NODE_ENV, timestamp: new Date().toISOString() });
+  res.json({ 
+    message: 'LUCT Reporting System API is running!', 
+    environment: process.env.NODE_ENV, 
+    timestamp: new Date().toISOString(),
+    cors: 'Enabled for frontend: https://luct-reporting-system-3-tpuc.onrender.com'
+  });
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString(), service: 'LUCT Reporting System API', environment: process.env.NODE_ENV, version: process.env.APP_VERSION });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(), 
+    service: 'LUCT Reporting System API', 
+    environment: process.env.NODE_ENV, 
+    version: process.env.APP_VERSION 
+  });
 });
 
 app.get('/api/health/db', async (req, res) => {
   try {
     const pool = require('./config/database');
     const result = await pool.query('SELECT NOW() as time, version() as version');
-    res.json({ status: 'OK', database: 'Connected', time: result.rows[0].time, version: result.rows[0].version, environment: process.env.NODE_ENV });
+    res.json({ 
+      status: 'OK', 
+      database: 'Connected', 
+      time: result.rows[0].time, 
+      version: result.rows[0].version, 
+      environment: process.env.NODE_ENV 
+    });
   } catch (error) {
-    res.status(500).json({ status: 'ERROR', database: 'Disconnected', error: error.message, environment: process.env.NODE_ENV });
+    res.status(500).json({ 
+      status: 'ERROR', 
+      database: 'Disconnected', 
+      error: error.message, 
+      environment: process.env.NODE_ENV 
+    });
   }
 });
 
@@ -195,6 +236,7 @@ app.get('/', (req, res) => {
     message: 'Welcome to LUCT Reporting System API',
     version: process.env.APP_VERSION,
     environment: process.env.NODE_ENV,
+    cors: 'Enabled for: https://luct-reporting-system-3-tpuc.onrender.com',
     endpoints: {
       health: '/api/health',
       test: '/api/test',
@@ -206,7 +248,11 @@ app.get('/', (req, res) => {
 
 // Handle 404
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found', path: req.originalUrl, method: req.method });
+  res.status(404).json({ 
+    error: 'Route not found', 
+    path: req.originalUrl, 
+    method: req.method 
+  });
 });
 
 // Global error handler
@@ -221,6 +267,7 @@ app.use((error, req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🌐 CORS Enabled for: https://luct-reporting-system-3-tpuc.onrender.com`);
   console.log(`📊 Public dashboard endpoint: /api/public/dashboard`);
   console.log(`🔧 Health check: /api/health`);
   console.log(`🗄️  Database health: /api/health/db`);

@@ -1,19 +1,20 @@
 import axios from 'axios';
 
-// Determine API URL based on environment
+// Determine API URL based on environment - FIXED
 const getApiBaseUrl = () => {
   if (process.env.NODE_ENV === 'production') {
-    return process.env.REACT_APP_API_URL || 'https://your-backend-app.onrender.com/api';
+    return 'https://luct-reporting-system-37q9.onrender.com/api'; // Your actual backend URL
   }
-  return process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  return 'http://localhost:5000/api';
 };
 
 const API = axios.create({
   baseURL: getApiBaseUrl(),
-  timeout: 30000, // Increased timeout for production
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
+  withCredentials: true // Important for CORS with credentials
 });
 
 // Request interceptor with enhanced logging
