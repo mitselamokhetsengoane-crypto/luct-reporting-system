@@ -1,4 +1,3 @@
-const Complaint = require('../models/Complaint');
 const pool = require('../config/database');
 
 const complaintController = {
@@ -30,7 +29,15 @@ const complaintController = {
         complaint_type: determineComplaintType(req.user.role, targetUser.rows[0].role)
       };
 
-      const complaint = await Complaint.create(complaintData);
+      // Insert complaint
+      const result = await pool.query(`
+        INSERT INTO complaints (title, description, complainant_id, complaint_against_id, complaint_type)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `, [title, description, req.user.id, complaint_against_id, complaintData.complaint_type]);
+
+      const complaint = result.rows[0];
+      
       res.status(201).json({ 
         message: 'Complaint filed successfully. You will receive feedback soon.', 
         complaint 
@@ -43,8 +50,17 @@ const complaintController = {
 
   getMyComplaints: async (req, res) => {
     try {
-      const complaints = await Complaint.findByComplainant(req.user.id);
-      res.json(complaints);
+      const result = await pool.query(`
+        SELECT 
+          c.*,
+          u.name as complaint_against_name
+        FROM complaints c
+        LEFT JOIN users u ON c.complaint_against_id = u.id
+        WHERE c.complainant_id = $1
+        ORDER BY c.created_at DESC
+      `, [req.user.id]);
+      
+      res.json(result.rows);
     } catch (error) {
       console.error('Error fetching complaints:', error);
       res.status(500).json({ message: 'Server error', error: error.message });
@@ -53,8 +69,17 @@ const complaintController = {
 
   getComplaintsForMe: async (req, res) => {
     try {
-      const complaints = await Complaint.findByRespondent(req.user.id);
-      res.json(complaints);
+      const result = await pool.query(`
+        SELECT 
+          c.*,
+          u.name as complainant_name
+        FROM complaints c
+        LEFT JOIN users u ON c.complainant_id = u.id
+        WHERE c.complaint_against_id = $1
+        ORDER BY c.created_at DESC
+      `, [req.user.id]);
+      
+      res.json(result.rows);
     } catch (error) {
       console.error('Error fetching complaints for response:', error);
       res.status(500).json({ message: 'Server error', error: error.message });
@@ -70,12 +95,19 @@ const complaintController = {
         return res.status(400).json({ message: 'Response is required' });
       }
 
-      const complaint = await Complaint.respond(id, req.user.id, response);
-      
-      if (!complaint) {
+      const result = await pool.query(`
+        UPDATE complaints 
+        SET response = $1, responded_by = $2, responded_at = CURRENT_TIMESTAMP, status = 'reviewed'
+        WHERE id = $3
+        RETURNING *
+      `, [response, req.user.id, id]);
+
+      if (result.rows.length === 0) {
         return res.status(404).json({ message: 'Complaint not found' });
       }
 
+      const complaint = result.rows[0];
+      
       res.json({ 
         message: 'Response submitted successfully. The complainant has been notified.', 
         complaint 
@@ -89,8 +121,17 @@ const complaintController = {
   // Download complaints data
   downloadMyComplaints: async (req, res) => {
     try {
-      const complaints = await Complaint.findByComplainant(req.user.id);
+      const result = await pool.query(`
+        SELECT 
+          c.*,
+          u.name as complaint_against_name
+        FROM complaints c
+        LEFT JOIN users u ON c.complaint_against_id = u.id
+        WHERE c.complainant_id = $1
+        ORDER BY c.created_at DESC
+      `, [req.user.id]);
       
+      const complaints = result.rows;
       const csvData = convertComplaintsToCSV(complaints);
       
       res.setHeader('Content-Type', 'text/csv');

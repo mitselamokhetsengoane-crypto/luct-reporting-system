@@ -34,6 +34,13 @@ const Dashboard = ({ user, onLogout }) => {
     trendData: {},
     alerts: []
   });
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [complaintForm, setComplaintForm] = useState({
+    title: '',
+    description: '',
+    complaint_against_id: '',
+    complaint_type: 'student_lecturer'
+  });
 
   useEffect(() => {
     loadDashboardData();
@@ -52,12 +59,10 @@ const Dashboard = ({ user, onLogout }) => {
       let assignments = [];
       let ratings = [];
 
-      // Validate user role
       if (!user || !user.role) {
         throw new Error('User role not defined');
       }
 
-      // Load data based on user role
       switch (user.role) {
         case 'pl':
         case 'prl':
@@ -80,7 +85,6 @@ const Dashboard = ({ user, onLogout }) => {
             console.log('Management data loaded:', { reports, complaints, assignments, ratings });
           } catch (error) {
             console.error('Error loading management data:', error);
-            setError(`Failed to load management data: ${error.message}`);
           }
           break;
 
@@ -107,7 +111,6 @@ const Dashboard = ({ user, onLogout }) => {
             console.log('Lecturer data loaded:', { reports, complaints, assignments, ratings });
           } catch (error) {
             console.error('Error loading lecturer data:', error);
-            setError(`Failed to load lecturer data: ${error.message}`);
           }
           break;
 
@@ -132,17 +135,14 @@ const Dashboard = ({ user, onLogout }) => {
             console.log('Student data loaded:', { reports, complaints, ratings });
           } catch (error) {
             console.error('Error loading student data:', error);
-            setError(`Failed to load student data: ${error.message}`);
           }
           break;
 
         default:
           console.warn('Unknown user role:', user.role);
-          setError(`Unknown user role: ${user.role}`);
           break;
       }
 
-      // Calculate statistics
       const stats = {
         totalReports: Array.isArray(reports) ? reports.length : 0,
         pendingReports: Array.isArray(reports) ? reports.filter(report => 
@@ -208,7 +208,6 @@ const Dashboard = ({ user, onLogout }) => {
 
     } catch (error) {
       console.error('Error loading monitoring data:', error);
-      // Set default empty values if API fails
       setMonitoringData({
         performanceMetrics: {},
         systemHealth: { status: 'unknown' },
@@ -219,7 +218,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Helper function to handle API responses
   const handleAPIResponse = (promiseResult, dataType) => {
     if (promiseResult.status === 'fulfilled') {
       const response = promiseResult.value;
@@ -286,7 +284,6 @@ const Dashboard = ({ user, onLogout }) => {
       console.log('Submitting rating:', ratingData);
       await ratingAPI.create(ratingData);
       
-      // Reload dashboard data to reflect new rating
       await loadDashboardData();
       closeRatingModal();
       
@@ -304,21 +301,69 @@ const Dashboard = ({ user, onLogout }) => {
     }));
   };
 
+  // Complaint Functions
+  const openComplaintModal = () => {
+    setComplaintForm({
+      title: '',
+      description: '',
+      complaint_against_id: '',
+      complaint_type: 'student_lecturer'
+    });
+    setShowComplaintModal(true);
+  };
+
+  const closeComplaintModal = () => {
+    setShowComplaintModal(false);
+    setComplaintForm({
+      title: '',
+      description: '',
+      complaint_against_id: '',
+      complaint_type: 'student_lecturer'
+    });
+  };
+
+  const handleComplaintSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const complaintData = {
+        title: complaintForm.title,
+        description: complaintForm.description,
+        complaint_against_id: complaintForm.complaint_against_id,
+        complaint_type: complaintForm.complaint_type
+      };
+
+      console.log('Submitting complaint:', complaintData);
+      await complaintAPI.create(complaintData);
+      
+      await loadDashboardData();
+      closeComplaintModal();
+      
+      alert('Complaint submitted successfully!');
+    } catch (error) {
+      console.error('Error submitting complaint:', error);
+      alert('Failed to submit complaint. Please try again.');
+    }
+  };
+
+  const handleComplaintChange = (field, value) => {
+    setComplaintForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   // Check if user can rate a specific report
   const canRateReport = (report) => {
     if (!report) return false;
     
-    // All users can rate reports from their faculty
     if (user.faculty && report.faculty === user.faculty) {
       return true;
     }
     
-    // Students can rate reports from their class
     if (user.role === 'student' && user.class_id && report.class_id === user.class_id) {
       return true;
     }
     
-    // Lecturers can rate reports they created or from their faculty
     if (user.role === 'lecturer' && (
       report.lecturer_id === user.id || 
       (user.faculty && report.faculty === user.faculty)
@@ -326,7 +371,6 @@ const Dashboard = ({ user, onLogout }) => {
       return true;
     }
     
-    // Management can rate reports from their faculty
     if (['pl', 'prl', 'fmg'].includes(user.role) && user.faculty && report.faculty === user.faculty) {
       return true;
     }
@@ -334,7 +378,6 @@ const Dashboard = ({ user, onLogout }) => {
     return false;
   };
 
-  // Check if user has already rated a report
   const hasRatedReport = (reportId) => {
     if (!Array.isArray(dashboardData.ratings)) {
       console.warn('dashboardData.ratings is not an array:', dashboardData.ratings);
@@ -351,21 +394,6 @@ const Dashboard = ({ user, onLogout }) => {
       case 'lecturer': return 'Lecturer Dashboard';
       case 'student': return 'Student Dashboard';
       default: return 'Dashboard';
-    }
-  };
-
-  const getRoleSpecificDescription = () => {
-    switch (user.role) {
-      case 'pl':
-      case 'prl':
-      case 'fmg':
-        return 'Manage reports, complaints, assignments, and monitor system performance';
-      case 'lecturer':
-        return 'Manage your teaching reports, course assignments, view ratings and performance metrics';
-      case 'student':
-        return 'View class reports, manage your complaints, rate lectures and track your activity';
-      default:
-        return 'System Dashboard';
     }
   };
 
@@ -441,7 +469,7 @@ const Dashboard = ({ user, onLogout }) => {
                       className={`star-btn ${star <= ratingForm.rating_value ? 'active' : ''}`}
                       onClick={() => handleRatingChange('rating_value', star)}
                     >
-                      ⭐
+                      {star}
                     </button>
                   ))}
                   <span className="rating-value">({ratingForm.rating_value}/5)</span>
@@ -471,10 +499,66 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
       )}
 
+      {/* Complaint Modal */}
+      {showComplaintModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>File a Complaint</h3>
+              <button onClick={closeComplaintModal} className="close-btn">&times;</button>
+            </div>
+            <form onSubmit={handleComplaintSubmit} className="complaint-form">
+              <div className="form-group">
+                <label>Title:</label>
+                <input
+                  type="text"
+                  value={complaintForm.title}
+                  onChange={(e) => handleComplaintChange('title', e.target.value)}
+                  placeholder="Enter complaint title"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Description:</label>
+                <textarea
+                  value={complaintForm.description}
+                  onChange={(e) => handleComplaintChange('description', e.target.value)}
+                  placeholder="Describe your complaint in detail..."
+                  rows="4"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Complaint Type:</label>
+                <select 
+                  value={complaintForm.complaint_type}
+                  onChange={(e) => handleComplaintChange('complaint_type', e.target.value)}
+                  required
+                >
+                  <option value="student_lecturer">Against Lecturer</option>
+                  <option value="lecturer_prl">Against Program Review Leader</option>
+                </select>
+              </div>
+
+              <div className="form-actions">
+                <button type="button" onClick={closeComplaintModal} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Submit Complaint
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="dashboard-header">
         <div className="header-content">
           <h1>{getRoleSpecificTitle()}</h1>
-          <p>{getRoleSpecificDescription()}</p>
+          <p>Welcome back, {user.name}</p>
         </div>
         <div className="header-actions">
           <button onClick={loadDashboardData} className="btn btn-outline">
@@ -486,22 +570,10 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
       </div>
 
-      {/* System Health Status */}
-      <div className="system-health-banner">
-        <div className="health-status">
-          <span className={`status-indicator ${monitoringData.systemHealth?.status || 'unknown'}`}>
-            ●
-          </span>
-          System Status: <strong>{monitoringData.systemHealth?.status || 'Unknown'}</strong>
-        </div>
-      </div>
-
       {/* Statistics Cards */}
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#3498db' }}>
-            <i>📊</i>
-          </div>
+          <div className="stat-icon" style={{ background: '#3498db' }}></div>
           <div className="stat-content">
             <h3>{dashboardData.stats.totalReports}</h3>
             <p>Total Reports</p>
@@ -509,9 +581,7 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#e74c3c' }}>
-            <i>⏳</i>
-          </div>
+          <div className="stat-icon" style={{ background: '#e74c3c' }}></div>
           <div className="stat-content">
             <h3>{dashboardData.stats.pendingReports}</h3>
             <p>Pending Reports</p>
@@ -519,9 +589,7 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#f39c12' }}>
-            <i>📝</i>
-          </div>
+          <div className="stat-icon" style={{ background: '#f39c12' }}></div>
           <div className="stat-content">
             <h3>{dashboardData.stats.totalComplaints}</h3>
             <p>Total Complaints</p>
@@ -529,20 +597,15 @@ const Dashboard = ({ user, onLogout }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#9b59b6' }}>
-            <i>⚠️</i>
-          </div>
+          <div className="stat-icon" style={{ background: '#9b59b6' }}></div>
           <div className="stat-content">
             <h3>{dashboardData.stats.pendingComplaints}</h3>
             <p>Pending Complaints</p>
           </div>
         </div>
 
-        {/* Ratings Statistics */}
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#27ae60' }}>
-            <i>⭐</i>
-          </div>
+          <div className="stat-icon" style={{ background: '#27ae60' }}></div>
           <div className="stat-content">
             <h3>{dashboardData.stats.totalRatings}</h3>
             <p>My Ratings</p>
@@ -551,24 +614,10 @@ const Dashboard = ({ user, onLogout }) => {
 
         {user.role === 'lecturer' && (
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#e67e22' }}>
-              <i>📈</i>
-            </div>
+            <div className="stat-icon" style={{ background: '#e67e22' }}></div>
             <div className="stat-content">
               <h3>{dashboardData.stats.averageRating.toFixed(1)}</h3>
               <p>Average Rating</p>
-            </div>
-          </div>
-        )}
-
-        {(user.role === 'pl' || user.role === 'lecturer') && (
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: '#34495e' }}>
-              <i>📚</i>
-            </div>
-            <div className="stat-content">
-              <h3>{dashboardData.stats.totalAssignments}</h3>
-              <p>Course Assignments</p>
             </div>
           </div>
         )}
@@ -583,26 +632,37 @@ const Dashboard = ({ user, onLogout }) => {
           Overview
         </button>
         
-        <button 
-          className={`tab-btn ${activeTab === 'monitoring' ? 'active' : ''}`}
-          onClick={() => setActiveTab('monitoring')}
-        >
-          Monitoring
-        </button>
+        {user.role === 'student' && (
+          <>
+            <button 
+              className={`tab-btn ${activeTab === 'rate-lectures' ? 'active' : ''}`}
+              onClick={() => setActiveTab('rate-lectures')}
+            >
+              Rate Lectures
+            </button>
 
-        <button 
-          className={`tab-btn ${activeTab === 'rate-lectures' ? 'active' : ''}`}
-          onClick={() => setActiveTab('rate-lectures')}
-        >
-          Rate Lectures
-        </button>
+            <button 
+              className={`tab-btn ${activeTab === 'my-ratings' ? 'active' : ''}`}
+              onClick={() => setActiveTab('my-ratings')}
+            >
+              My Ratings
+            </button>
 
-        <button 
-          className={`tab-btn ${activeTab === 'my-ratings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('my-ratings')}
-        >
-          My Ratings
-        </button>
+            <button 
+              className={`tab-btn ${activeTab === 'class-reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('class-reports')}
+            >
+              Class Reports
+            </button>
+
+            <button 
+              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
+              onClick={() => setActiveTab('my-complaints')}
+            >
+              My Complaints
+            </button>
+          </>
+        )}
 
         {(user.role === 'pl' || user.role === 'prl' || user.role === 'fmg') && (
           <>
@@ -645,23 +705,6 @@ const Dashboard = ({ user, onLogout }) => {
             </button>
           </>
         )}
-
-        {user.role === 'student' && (
-          <>
-            <button 
-              className={`tab-btn ${activeTab === 'class-reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('class-reports')}
-            >
-              Class Reports
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
-              onClick={() => setActiveTab('my-complaints')}
-            >
-              My Complaints
-            </button>
-          </>
-        )}
       </div>
 
       {/* Tab Content */}
@@ -678,15 +721,7 @@ const Dashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'monitoring' && (
-          <MonitoringTab 
-            user={user}
-            monitoringData={monitoringData}
-            dashboardData={dashboardData}
-          />
-        )}
-
-        {activeTab === 'rate-lectures' && (
+        {activeTab === 'rate-lectures' && user.role === 'student' && (
           <RateLecturesTab 
             user={user}
             reports={dashboardData.reports}
@@ -696,10 +731,27 @@ const Dashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'my-ratings' && (
+        {activeTab === 'my-ratings' && user.role === 'student' && (
           <MyRatingsTab 
             ratings={dashboardData.ratings}
             user={user}
+          />
+        )}
+
+        {activeTab === 'class-reports' && user.role === 'student' && (
+          <ClassReportsTab 
+            reports={dashboardData.reports}
+            onRateReport={openRatingModal}
+            canRateReport={canRateReport}
+            hasRatedReport={hasRatedReport}
+          />
+        )}
+
+        {activeTab === 'my-complaints' && user.role === 'student' && (
+          <MyComplaintsTab 
+            complaints={dashboardData.complaints}
+            user={user}
+            onNewComplaint={openComplaintModal}
           />
         )}
 
@@ -735,18 +787,10 @@ const Dashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'class-reports' && user.role === 'student' && (
-          <ClassReportsTab 
-            reports={dashboardData.reports}
-            onRateReport={openRatingModal}
-            canRateReport={canRateReport}
-            hasRatedReport={hasRatedReport}
-          />
-        )}
-
-        {activeTab === 'my-complaints' && (user.role === 'lecturer' || user.role === 'student') && (
+        {activeTab === 'my-complaints' && user.role === 'lecturer' && (
           <MyComplaintsTab 
             complaints={dashboardData.complaints}
+            user={user}
           />
         )}
       </div>
@@ -754,273 +798,18 @@ const Dashboard = ({ user, onLogout }) => {
   );
 };
 
-// Monitoring Tab Component
-const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
-  return (
-    <div className="monitoring-tab">
-      <div className="tab-header">
-        <h2>System Monitoring & Analytics</h2>
-      </div>
-
-      {/* Performance Metrics Grid */}
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <h3>System Performance</h3>
-          <div className="metric-list">
-            <div className="metric-item">
-              <span className="metric-label">Response Time</span>
-              <span className="metric-value">
-                {monitoringData.performanceMetrics?.response_time || 'N/A'}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Uptime</span>
-              <span className="metric-value">
-                {monitoringData.performanceMetrics?.uptime ? `${monitoringData.performanceMetrics.uptime}s` : 'N/A'}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Recent Activities</span>
-              <span className="metric-value">
-                {monitoringData.performanceMetrics?.recent_activities || 0}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <h3>System Health</h3>
-          <div className="metric-list">
-            <div className="metric-item">
-              <span className="metric-label">Status</span>
-              <span className={`metric-value ${monitoringData.systemHealth?.status || 'unknown'}`}>
-                {monitoringData.systemHealth?.status || 'Unknown'}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Database</span>
-              <span className="metric-value">
-                {monitoringData.systemHealth?.database || 'Unknown'}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Environment</span>
-              <span className="metric-value">
-                {monitoringData.systemHealth?.environment || 'N/A'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <h3>Activity Trends</h3>
-          <div className="trend-metrics">
-            <div className="trend-item">
-              <span className="trend-label">Total Reports</span>
-              <span className="trend-value">
-                {dashboardData.stats.totalReports}
-              </span>
-            </div>
-            <div className="trend-item">
-              <span className="trend-label">Total Ratings</span>
-              <span className="trend-value">
-                {dashboardData.stats.totalRatings}
-              </span>
-            </div>
-            <div className="trend-item">
-              <span className="trend-label">Total Complaints</span>
-              <span className="trend-value">
-                {dashboardData.stats.totalComplaints}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <h3>Recent Activity</h3>
-          <div className="activity-feed">
-            {monitoringData.activityLogs && monitoringData.activityLogs.length > 0 ? (
-              monitoringData.activityLogs.slice(0, 5).map((activity, index) => (
-                <div key={index} className="activity-item">
-                  <div className="activity-icon">📊</div>
-                  <div className="activity-content">
-                    <p className="activity-text">
-                      {activity.user_name} {activity.action} for {activity.course_name}
-                    </p>
-                    <small className="activity-time">
-                      {new Date(activity.created_at).toLocaleDateString()}
-                    </small>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="no-data">
-                <p>No activity data available</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Alerts Section */}
-      <div className="alerts-section">
-        <h3>System Alerts</h3>
-        <div className="alerts-container">
-          {monitoringData.alerts && monitoringData.alerts.length > 0 ? (
-            monitoringData.alerts.map((alert, index) => (
-              <div key={index} className={`alert-item ${alert.type}`}>
-                <div className="alert-icon">⚠️</div>
-                <div className="alert-content">
-                  <p><strong>{alert.type.toUpperCase()} Alert</strong></p>
-                  <p>{alert.message}</p>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="no-alerts">
-              <p>No active alerts</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Overview Tab Component
-const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
-  const getPendingActions = () => {
-    const actions = [];
-    
-    if (data.stats.pendingReports > 0) {
-      actions.push({
-        type: 'report',
-        count: data.stats.pendingReports,
-        message: `${data.stats.pendingReports} reports pending your approval`,
-        priority: 'high'
-      });
-    }
-    
-    if (data.stats.pendingComplaints > 0) {
-      actions.push({
-        type: 'complaint',
-        count: data.stats.pendingComplaints,
-        message: `${data.stats.pendingComplaints} complaints require your response`,
-        priority: 'medium'
-      });
-    }
-
-    // Add rating reminder
-    const unratedReports = Array.isArray(data.reports) ? data.reports.filter(report => 
-      canRateReport(report) && !hasRatedReport(report.id)
-    ).length : 0;
-    
-    if (unratedReports > 0) {
-      actions.push({
-        type: 'rating',
-        count: unratedReports,
-        message: `${unratedReports} reports available for rating`,
-        priority: 'low'
-      });
-    }
-
-    return actions;
-  };
-
-  const pendingActions = getPendingActions();
-
-  return (
-    <div className="overview-tab">
-      <div className="tab-header">
-        <h2>Quick Overview</h2>
-        <button onClick={onRefresh} className="btn btn-secondary">
-          Refresh Data
-        </button>
-      </div>
-
-      {pendingActions.length > 0 && (
-        <div className="action-alerts">
-          <h3>Action Required</h3>
-          {pendingActions.map((action, index) => (
-            <div key={index} className={`alert alert-${action.priority}`}>
-              <span>{action.message}</span>
-              {action.type === 'rating' && (
-                <button 
-                  onClick={() => {
-                    const rateBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
-                      btn.textContent === 'Rate Lectures'
-                    );
-                    if (rateBtn) rateBtn.click();
-                  }}
-                  className="btn btn-sm btn-primary"
-                  style={{marginLeft: '1rem'}}
-                >
-                  Rate Now
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="recent-activity">
-        <h3>Recent Activity</h3>
-        <div className="activity-list">
-          {Array.isArray(data.reports) && data.reports.slice(0, 5).map(report => (
-            <div key={report.id} className="activity-item">
-              <div className="activity-icon">📊</div>
-              <div className="activity-content">
-                <p>
-                  <strong>{report.course_name || 'N/A'}</strong> - Week {report.week_number}
-                  {canRateReport(report) && !hasRatedReport(report.id) && (
-                    <button 
-                      onClick={() => onRateReport(report)}
-                      className="btn btn-sm btn-primary"
-                      style={{marginLeft: '1rem'}}
-                    >
-                      Rate
-                    </button>
-                  )}
-                </p>
-                <small>Status: {report.status} • {new Date(report.created_at).toLocaleDateString()}</small>
-              </div>
-            </div>
-          ))}
-          
-          {Array.isArray(data.ratings) && data.ratings.slice(0, 3).map(rating => (
-            <div key={rating.id} className="activity-item">
-              <div className="activity-icon">⭐</div>
-              <div className="activity-content">
-                <p><strong>New Rating</strong> - {rating.rating_value} stars</p>
-                <small>{rating.comment ? rating.comment.substring(0, 50) + '...' : 'No comment'} • {new Date(rating.created_at).toLocaleDateString()}</small>
-              </div>
-            </div>
-          ))}
-          
-          {((!Array.isArray(data.reports) || data.reports.length === 0) && (!Array.isArray(data.ratings) || data.ratings.length === 0)) && (
-            <p className="no-data">No recent activity</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Rate Lectures Tab Component
+// Student Dashboard Tabs
 const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedReport }) => {
   const [filterFaculty, setFilterFaculty] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
 
-  // Filter reports that user can rate
   const rateableReports = Array.isArray(reports) ? reports.filter(report => 
     canRateReport(report) && !hasRatedReport(report.id)
   ) : [];
 
-  // Get unique faculties and courses for filters
   const faculties = [...new Set(rateableReports.map(report => report.faculty))];
   const courses = [...new Set(rateableReports.map(report => report.course_name))];
 
-  // Apply filters
   const filteredReports = rateableReports.filter(report => {
     const matchesFaculty = !filterFaculty || report.faculty === filterFaculty;
     const matchesCourse = !filterCourse || report.course_name === filterCourse;
@@ -1030,11 +819,10 @@ const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedR
   return (
     <div className="rate-lectures-tab">
       <div className="tab-header">
-        <h2>Rate Lectures in Your Faculty</h2>
-        <p>Provide feedback on lectures and teaching quality</p>
+        <h2>Rate Lectures</h2>
+        <p>Provide feedback on lectures in your faculty</p>
       </div>
 
-      {/* Filters */}
       <div className="filters">
         <div className="filter-group">
           <label>Faculty:</label>
@@ -1105,12 +893,6 @@ const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedR
           {filteredReports.length === 0 && (
             <div className="no-data">
               <p>No reports available for rating</p>
-              <p className="subtext">
-                {rateableReports.length === 0 
-                  ? "You have rated all available reports or no reports are available in your faculty."
-                  : "No reports match your current filters."
-                }
-              </p>
             </div>
           )}
         </div>
@@ -1119,13 +901,7 @@ const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedR
   );
 };
 
-// My Ratings Tab Component
 const MyRatingsTab = ({ ratings, user }) => {
-  const renderStars = (ratingValue) => {
-    return '⭐'.repeat(ratingValue);
-  };
-
-  // Ensure ratings is an array
   const ratingsArray = Array.isArray(ratings) ? ratings : [];
 
   return (
@@ -1135,8 +911,8 @@ const MyRatingsTab = ({ ratings, user }) => {
         <table>
           <thead>
             <tr>
-              {user.role === 'student' && <th>Lecturer</th>}
-              {user.role === 'student' && <th>Course</th>}
+              <th>Lecturer</th>
+              <th>Course</th>
               <th>Rating</th>
               <th>Type</th>
               <th>Comment</th>
@@ -1146,18 +922,11 @@ const MyRatingsTab = ({ ratings, user }) => {
           <tbody>
             {ratingsArray.map(rating => (
               <tr key={rating.id}>
-                {user.role === 'student' && (
-                  <td>{rating.lecturer_name || 'N/A'}</td>
-                )}
-                {user.role === 'student' && (
-                  <td>{rating.course_name || 'N/A'} - Week {rating.week_number || 'N/A'}</td>
-                )}
+                <td>{rating.lecturer_name || 'N/A'}</td>
+                <td>{rating.course_name || 'N/A'} - Week {rating.week_number || 'N/A'}</td>
                 <td>
                   <span className="rating-stars">
-                    {renderStars(rating.rating_value)}
-                    <span style={{ marginLeft: '0.5rem', color: '#666' }}>
-                      ({rating.rating_value}/5)
-                    </span>
+                    {rating.rating_value}/5
                   </span>
                 </td>
                 <td>
@@ -1182,7 +951,227 @@ const MyRatingsTab = ({ ratings, user }) => {
   );
 };
 
-// Pending Reports Tab Component
+const ClassReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) => {
+  const reportsArray = Array.isArray(reports) ? reports : [];
+  
+  return (
+    <div className="class-reports-tab">
+      <h2>Class Reports</h2>
+      <div className="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Course</th>
+              <th>Week</th>
+              <th>Date</th>
+              <th>Lecturer</th>
+              <th>Students Present</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reportsArray.map(report => (
+              <tr key={report.id}>
+                <td>{report.course_name || 'N/A'}</td>
+                <td>Week {report.week_number}</td>
+                <td>{new Date(report.date_of_lecture).toLocaleDateString()}</td>
+                <td>{report.lecturer_name || 'N/A'}</td>
+                <td>{report.students_present}</td>
+                <td>
+                  <span className={`status-${report.status}`}>
+                    {report.status.toUpperCase()}
+                  </span>
+                </td>
+                <td>
+                  {canRateReport(report) && !hasRatedReport(report.id) && (
+                    <button 
+                      onClick={() => onRateReport(report)}
+                      className="btn btn-primary btn-sm"
+                    >
+                      Rate
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {reportsArray.length === 0 && (
+          <div className="no-data">
+            <p>No class reports found</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const MyComplaintsTab = ({ complaints, user, onNewComplaint }) => {
+  const complaintsArray = Array.isArray(complaints) ? complaints : [];
+  
+  return (
+    <div className="my-complaints-tab">
+      <div className="tab-header">
+        <h2>My Complaints</h2>
+        <button onClick={onNewComplaint} className="btn btn-primary">
+          File New Complaint
+        </button>
+      </div>
+      <div className="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Against</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Response</th>
+            </tr>
+          </thead>
+          <tbody>
+            {complaintsArray.map(complaint => (
+              <tr key={complaint.id}>
+                <td>{complaint.title}</td>
+                <td>{complaint.complaint_against_name}</td>
+                <td>{new Date(complaint.created_at).toLocaleDateString()}</td>
+                <td>
+                  <span className={`status-${complaint.status}`}>
+                    {complaint.status.toUpperCase()}
+                  </span>
+                </td>
+                <td>{complaint.response || 'No response yet'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {complaintsArray.length === 0 && (
+          <div className="no-data">
+            <p>No complaints found</p>
+            <p className="subtext">File a complaint to see it here!</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Other Tab Components
+const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
+  const getPendingActions = () => {
+    const actions = [];
+    
+    if (data.stats.pendingReports > 0) {
+      actions.push({
+        type: 'report',
+        count: data.stats.pendingReports,
+        message: `${data.stats.pendingReports} reports pending your approval`,
+        priority: 'high'
+      });
+    }
+    
+    if (data.stats.pendingComplaints > 0) {
+      actions.push({
+        type: 'complaint',
+        count: data.stats.pendingComplaints,
+        message: `${data.stats.pendingComplaints} complaints require your response`,
+        priority: 'medium'
+      });
+    }
+
+    const unratedReports = Array.isArray(data.reports) ? data.reports.filter(report => 
+      canRateReport(report) && !hasRatedReport(report.id)
+    ).length : 0;
+    
+    if (unratedReports > 0) {
+      actions.push({
+        type: 'rating',
+        count: unratedReports,
+        message: `${unratedReports} reports available for rating`,
+        priority: 'low'
+      });
+    }
+
+    return actions;
+  };
+
+  const pendingActions = getPendingActions();
+
+  return (
+    <div className="overview-tab">
+      <div className="tab-header">
+        <h2>Quick Overview</h2>
+        <button onClick={onRefresh} className="btn btn-secondary">
+          Refresh Data
+        </button>
+      </div>
+
+      {pendingActions.length > 0 && (
+        <div className="action-alerts">
+          <h3>Action Required</h3>
+          {pendingActions.map((action, index) => (
+            <div key={index} className={`alert alert-${action.priority}`}>
+              <span>{action.message}</span>
+              {action.type === 'rating' && (
+                <button 
+                  onClick={() => {
+                    const rateBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
+                      btn.textContent === 'Rate Lectures'
+                    );
+                    if (rateBtn) rateBtn.click();
+                  }}
+                  className="btn btn-sm btn-primary"
+                  style={{marginLeft: '1rem'}}
+                >
+                  Rate Now
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="recent-activity">
+        <h3>Recent Activity</h3>
+        <div className="activity-list">
+          {Array.isArray(data.reports) && data.reports.slice(0, 5).map(report => (
+            <div key={report.id} className="activity-item">
+              <div className="activity-content">
+                <p>
+                  <strong>{report.course_name || 'N/A'}</strong> - Week {report.week_number}
+                  {canRateReport(report) && !hasRatedReport(report.id) && (
+                    <button 
+                      onClick={() => onRateReport(report)}
+                      className="btn btn-sm btn-primary"
+                      style={{marginLeft: '1rem'}}
+                    >
+                      Rate
+                    </button>
+                  )}
+                </p>
+                <small>Status: {report.status} • {new Date(report.created_at).toLocaleDateString()}</small>
+              </div>
+            </div>
+          ))}
+          
+          {Array.isArray(data.ratings) && data.ratings.slice(0, 3).map(rating => (
+            <div key={rating.id} className="activity-item">
+              <div className="activity-content">
+                <p><strong>New Rating</strong> - {rating.rating_value} stars</p>
+                <small>{rating.comment ? rating.comment.substring(0, 50) + '...' : 'No comment'} • {new Date(rating.created_at).toLocaleDateString()}</small>
+              </div>
+            </div>
+          ))}
+          
+          {((!Array.isArray(data.reports) || data.reports.length === 0) && (!Array.isArray(data.ratings) || data.ratings.length === 0)) && (
+            <p className="no-data">No recent activity</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PendingReportsTab = ({ reports, user, onRateReport, canRateReport, hasRatedReport }) => {
   const getStatusBadge = (status) => {
     const statusConfig = {
@@ -1205,7 +1194,6 @@ const PendingReportsTab = ({ reports, user, onRateReport, canRateReport, hasRate
     );
   };
 
-  // Ensure reports is an array
   const reportsArray = Array.isArray(reports) ? reports : [];
 
   return (
@@ -1259,9 +1247,7 @@ const PendingReportsTab = ({ reports, user, onRateReport, canRateReport, hasRate
   );
 };
 
-// Complaints Tab Component
 const ComplaintsTab = ({ complaints, user }) => {
-  // Ensure complaints is an array
   const complaintsArray = Array.isArray(complaints) ? complaints : [];
 
   return (
@@ -1304,7 +1290,6 @@ const ComplaintsTab = ({ complaints, user }) => {
   );
 };
 
-// Assignments Tab Component
 const AssignmentsTab = ({ assignments }) => {
   const assignmentsArray = Array.isArray(assignments) ? assignments : [];
   
@@ -1340,7 +1325,6 @@ const AssignmentsTab = ({ assignments }) => {
   );
 };
 
-// My Reports Tab Component
 const MyReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) => {
   const reportsArray = Array.isArray(reports) ? reports : [];
   
@@ -1395,63 +1379,7 @@ const MyReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) 
   );
 };
 
-// Class Reports Tab Component
-const ClassReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) => {
-  const reportsArray = Array.isArray(reports) ? reports : [];
-  
-  return (
-    <div className="class-reports-tab">
-      <h2>Class Reports</h2>
-      <div className="data-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Course</th>
-              <th>Week</th>
-              <th>Date</th>
-              <th>Lecturer</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportsArray.map(report => (
-              <tr key={report.id}>
-                <td>{report.course_name || 'N/A'}</td>
-                <td>Week {report.week_number}</td>
-                <td>{new Date(report.date_of_lecture).toLocaleDateString()}</td>
-                <td>{report.lecturer_name || 'N/A'}</td>
-                <td>
-                  <span className={`status-${report.status}`}>
-                    {report.status.toUpperCase()}
-                  </span>
-                </td>
-                <td>
-                  {canRateReport(report) && !hasRatedReport(report.id) && (
-                    <button 
-                      onClick={() => onRateReport(report)}
-                      className="btn btn-primary btn-sm"
-                    >
-                      Rate
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {reportsArray.length === 0 && (
-          <div className="no-data">
-            <p>No class reports found</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// My Complaints Tab Component
-const MyComplaintsTab = ({ complaints }) => {
+const MyComplaintsTabLecturer = ({ complaints, user }) => {
   const complaintsArray = Array.isArray(complaints) ? complaints : [];
   
   return (

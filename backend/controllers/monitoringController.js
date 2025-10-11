@@ -76,7 +76,7 @@ class MonitoringService {
     }
   }
 
-  // Get activity logs
+  // Get activity logs - FIXED complaint_by reference
   static async getActivityLogs(range = '7d') {
     try {
       let interval;
@@ -110,7 +110,7 @@ class MonitoringService {
           c.created_at,
           c.status
         FROM complaints c
-        LEFT JOIN users u ON c.complaint_by = u.id
+        LEFT JOIN users u ON c.complainant_id = u.id  -- FIXED: Changed from complaint_by to complainant_id
         WHERE c.created_at >= NOW() - INTERVAL '${interval}'
         
         ORDER BY created_at DESC
