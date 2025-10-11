@@ -1,50 +1,21 @@
-// Backend routes for monitoring
-// routes/monitoring.js
+const express = require('express');
+const router = express.Router();
+const {
+  getPerformanceMetrics,
+  getSystemHealth,
+  getActivityLogs,
+  getTrendData,
+  getAlerts
+} = require('../controllers/monitoringController');
 
-router.get('/performance', async (req, res) => {
-  try {
-    // Get real performance metrics from your system
-    const performanceData = await MonitoringService.getPerformanceMetrics();
-    res.json(performanceData);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// Apply authentication middleware if needed
+// const auth = require('../middleware/auth');
 
-router.get('/health', async (req, res) => {
-  try {
-    // Get system health status
-    const healthData = await MonitoringService.getSystemHealth();
-    res.json(healthData);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// All monitoring routes
+router.get('/performance', getPerformanceMetrics);
+router.get('/health', getSystemHealth);
+router.get('/activity', getActivityLogs);
+router.get('/trends', getTrendData);
+router.get('/alerts', getAlerts);
 
-router.get('/activity', async (req, res) => {
-  try {
-    const { range } = req.query;
-    const activityData = await MonitoringService.getActivityLogs(range);
-    res.json(activityData);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/trends', async (req, res) => {
-  try {
-    const trendData = await MonitoringService.getTrendData();
-    res.json(trendData);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/alerts', async (req, res) => {
-  try {
-    const alerts = await MonitoringService.getAlerts();
-    res.json(alerts);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+module.exports = router;

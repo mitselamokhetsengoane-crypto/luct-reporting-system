@@ -110,7 +110,7 @@ const PublicDashboard = () => {
       {/* Welcome Section */}
       <div className="welcome-section">
         <h1>Welcome to LUCT Reporting System</h1>
-        <p>Streamlining academic reporting and communication for better education outcomes</p>
+        
         
         <div className="welcome-stats">
           <div className="welcome-stat">
@@ -144,14 +144,14 @@ const PublicDashboard = () => {
             padding: '0.75rem 2rem',
             fontSize: '1.1rem'
           }}>
-            🔐 Login to System
+           Login to System
           </Link>
           <Link to="/register" className="btn btn-secondary" style={{ 
             textDecoration: 'none',
             padding: '0.75rem 2rem',
             fontSize: '1.1rem'
           }}>
-            📝 Create Account
+            Create Account
           </Link>
         </div>
       </div>
@@ -160,31 +160,31 @@ const PublicDashboard = () => {
       <div className="dashboard-content">
         {/* Statistics Overview */}
         <div className="stats-section">
-          <h2>📊 System Overview</h2>
+          <h2>System Overview</h2>
           <div className="stats-grid">
             <div className="stat-card">
-              <div className="stat-icon">📋</div>
+              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalReports}</h3>
                 <p>Total Reports</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon">👨‍🎓</div>
+              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalStudents}</h3>
                 <p>Registered Students</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon">👨‍🏫</div>
+              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalLecturers}</h3>
                 <p>Academic Staff</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon">📚</div>
+              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalCourses}</h3>
                 <p>Courses Offered</p>
@@ -195,7 +195,7 @@ const PublicDashboard = () => {
 
         {/* Faculty Performance */}
         <div className="faculty-stats">
-          <h2>🎓 Faculty Performance</h2>
+          <h2> Faculty Performance</h2>
           <div className="faculty-cards">
             {dashboardData.facultyStats.map((faculty, index) => (
               <div key={index} className="faculty-card">
@@ -217,13 +217,13 @@ const PublicDashboard = () => {
 
         {/* Recent Activities */}
         <div className="recent-activities">
-          <h2>🔄 Recent Activities</h2>
+          <h2> Recent Activities</h2>
           <div className="activities-list">
             {dashboardData.recentActivities.length > 0 ? (
               dashboardData.recentActivities.map((activity, index) => (
                 <div key={index} className="activity-item">
                   <div className="activity-icon">
-                    {activity.type === 'report' ? '📝' : '💬'}
+                    {activity.type === 'report' ? '' : ''}
                   </div>
                   <div className="activity-content">
                     <p>{activity.description}</p>
@@ -241,7 +241,7 @@ const PublicDashboard = () => {
 
         {/* Popular Courses */}
         <div className="popular-courses">
-          <h2>🏆 Popular Courses</h2>
+          <h2> Popular Courses</h2>
           <div className="courses-list">
             {dashboardData.popularCourses.length > 0 ? (
               dashboardData.popularCourses.map((course, index) => (

@@ -38,13 +38,6 @@ const Dashboard = ({ user, onLogout }) => {
   useEffect(() => {
     loadDashboardData();
     loadMonitoringData();
-    
-    // Refresh monitoring data every 30 seconds
-    const interval = setInterval(() => {
-      loadMonitoringData();
-    }, 30000);
-    
-    return () => clearInterval(interval);
   }, [user]);
 
   const loadDashboardData = async () => {
@@ -181,7 +174,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Load monitoring data from API
   const loadMonitoringData = async () => {
     try {
       console.log('Loading monitoring data...');
@@ -195,7 +187,7 @@ const Dashboard = ({ user, onLogout }) => {
       ] = await Promise.allSettled([
         monitoringAPI.getPerformanceMetrics(),
         monitoringAPI.getSystemHealth(),
-        monitoringAPI.getActivityLogs(),
+        monitoringAPI.getActivityLogs('7d'),
         monitoringAPI.getTrendData(),
         monitoringAPI.getAlerts()
       ]);
@@ -219,7 +211,7 @@ const Dashboard = ({ user, onLogout }) => {
       // Set default empty values if API fails
       setMonitoringData({
         performanceMetrics: {},
-        systemHealth: {},
+        systemHealth: { status: 'unknown' },
         activityLogs: [],
         trendData: {},
         alerts: []
@@ -296,7 +288,6 @@ const Dashboard = ({ user, onLogout }) => {
       
       // Reload dashboard data to reflect new rating
       await loadDashboardData();
-      await loadMonitoringData(); // Refresh monitoring data
       closeRatingModal();
       
       alert('Rating submitted successfully!');
@@ -343,7 +334,7 @@ const Dashboard = ({ user, onLogout }) => {
     return false;
   };
 
-  // Check if user has already rated a report - FIXED
+  // Check if user has already rated a report
   const hasRatedReport = (reportId) => {
     if (!Array.isArray(dashboardData.ratings)) {
       console.warn('dashboardData.ratings is not an array:', dashboardData.ratings);
@@ -486,8 +477,8 @@ const Dashboard = ({ user, onLogout }) => {
           <p>{getRoleSpecificDescription()}</p>
         </div>
         <div className="header-actions">
-          <button onClick={() => loadMonitoringData()} className="btn btn-outline">
-            Refresh Monitoring
+          <button onClick={loadDashboardData} className="btn btn-outline">
+            Refresh Data
           </button>
           <button onClick={onLogout} className="btn btn-secondary">
             Logout
@@ -502,10 +493,6 @@ const Dashboard = ({ user, onLogout }) => {
             ●
           </span>
           System Status: <strong>{monitoringData.systemHealth?.status || 'Unknown'}</strong>
-          <span className="health-details">
-            • Last Incident: {monitoringData.systemHealth?.lastIncident || 'No data'}
-            • Uptime: {monitoringData.performanceMetrics?.uptime || ''}
-          </span>
         </div>
       </div>
 
@@ -518,11 +505,6 @@ const Dashboard = ({ user, onLogout }) => {
           <div className="stat-content">
             <h3>{dashboardData.stats.totalReports}</h3>
             <p>Total Reports</p>
-            <div className="stat-trend">
-              <span className={`trend ${monitoringData.trendData?.reportsTrend?.includes('+') ? 'positive' : 'negative'}`}>
-                {monitoringData.trendData?.reportsTrend || ''}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -543,11 +525,6 @@ const Dashboard = ({ user, onLogout }) => {
           <div className="stat-content">
             <h3>{dashboardData.stats.totalComplaints}</h3>
             <p>Total Complaints</p>
-            <div className="stat-trend">
-              <span className={`trend ${monitoringData.trendData?.complaintsTrend?.includes('+') ? 'negative' : 'positive'}`}>
-                {monitoringData.trendData?.complaintsTrend || ''}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -561,7 +538,7 @@ const Dashboard = ({ user, onLogout }) => {
           </div>
         </div>
 
-        {/* Ratings Statistics - Show for all users */}
+        {/* Ratings Statistics */}
         <div className="stat-card">
           <div className="stat-icon" style={{ background: '#27ae60' }}>
             <i>⭐</i>
@@ -569,18 +546,13 @@ const Dashboard = ({ user, onLogout }) => {
           <div className="stat-content">
             <h3>{dashboardData.stats.totalRatings}</h3>
             <p>My Ratings</p>
-            <div className="stat-trend">
-              <span className={`trend ${monitoringData.trendData?.ratingsTrend?.includes('+') ? 'positive' : 'negative'}`}>
-                {monitoringData.trendData?.ratingsTrend || ''}
-              </span>
-            </div>
           </div>
         </div>
 
         {user.role === 'lecturer' && (
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#e67e22' }}>
-              <i>🏆</i>
+              <i>📈</i>
             </div>
             <div className="stat-content">
               <h3>{dashboardData.stats.averageRating.toFixed(1)}</h3>
@@ -588,37 +560,6 @@ const Dashboard = ({ user, onLogout }) => {
             </div>
           </div>
         )}
-
-        {/* Monitoring Stats */}
-        <div className="stat-card monitoring-stat">
-          <div className="stat-icon" style={{ background: '#2c3e50' }}>
-            <i>👥</i>
-          </div>
-          <div className="stat-content">
-            <h3>{monitoringData.performanceMetrics?.activeUsers || 0}</h3>
-            <p>Active Users</p>
-            <div className="stat-trend">
-              <span className="trend positive">
-                {monitoringData.trendData?.userGrowth || ''}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card monitoring-stat">
-          <div className="stat-icon" style={{ background: '#16a085' }}>
-            <i>⚡</i>
-          </div>
-          <div className="stat-content">
-            <h3>{monitoringData.performanceMetrics?.responseTime || ''}</h3>
-            <p>Response Time</p>
-            <div className="stat-trend">
-              <span className="trend positive">
-                {monitoringData.trendData?.performanceTrend || ''}
-              </span>
-            </div>
-          </div>
-        </div>
 
         {(user.role === 'pl' || user.role === 'lecturer') && (
           <div className="stat-card">
@@ -642,7 +583,6 @@ const Dashboard = ({ user, onLogout }) => {
           Overview
         </button>
         
-        {/* Add Monitoring tab for all users */}
         <button 
           className={`tab-btn ${activeTab === 'monitoring' ? 'active' : ''}`}
           onClick={() => setActiveTab('monitoring')}
@@ -650,7 +590,6 @@ const Dashboard = ({ user, onLogout }) => {
           Monitoring
         </button>
 
-        {/* Add Ratings tab for all users */}
         <button 
           className={`tab-btn ${activeTab === 'rate-lectures' ? 'active' : ''}`}
           onClick={() => setActiveTab('rate-lectures')}
@@ -815,48 +754,12 @@ const Dashboard = ({ user, onLogout }) => {
   );
 };
 
-// New Monitoring Tab Component with proper error handling
+// Monitoring Tab Component
 const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
-  const [timeRange, setTimeRange] = useState('7d');
-
-  const getPerformanceStatus = (metric, value) => {
-    if (!value) return 'unknown';
-    
-    if (metric === 'responseTime') {
-      const time = parseInt(value);
-      if (time < 100) return 'excellent';
-      if (time < 200) return 'good';
-      if (time < 500) return 'fair';
-      return 'poor';
-    }
-    
-    if (metric === 'uptime') {
-      const uptime = parseFloat(value);
-      if (uptime >= 99.9) return 'excellent';
-      if (uptime >= 99.5) return 'good';
-      if (uptime >= 99.0) return 'fair';
-      return 'poor';
-    }
-    
-    return 'good';
-  };
-
   return (
     <div className="monitoring-tab">
       <div className="tab-header">
         <h2>System Monitoring & Analytics</h2>
-        <div className="monitoring-controls">
-          <select 
-            value={timeRange} 
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="time-range-selector"
-          >
-            <option value="24h">Last 24 Hours</option>
-            <option value="7d">Last 7 Days</option>
-            <option value="30d">Last 30 Days</option>
-            <option value="90d">Last 90 Days</option>
-          </select>
-        </div>
       </div>
 
       {/* Performance Metrics Grid */}
@@ -866,80 +769,44 @@ const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
           <div className="metric-list">
             <div className="metric-item">
               <span className="metric-label">Response Time</span>
-              <span className={`metric-value ${getPerformanceStatus('responseTime', monitoringData.performanceMetrics?.responseTime)}`}>
-                {monitoringData.performanceMetrics?.responseTime || ''}
+              <span className="metric-value">
+                {monitoringData.performanceMetrics?.response_time || 'N/A'}
               </span>
             </div>
             <div className="metric-item">
               <span className="metric-label">Uptime</span>
-              <span className={`metric-value ${getPerformanceStatus('uptime', monitoringData.performanceMetrics?.uptime)}`}>
-                {monitoringData.performanceMetrics?.uptime || ''}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Active Users</span>
               <span className="metric-value">
-                {monitoringData.performanceMetrics?.activeUsers || 0}
+                {monitoringData.performanceMetrics?.uptime ? `${monitoringData.performanceMetrics.uptime}s` : 'N/A'}
               </span>
             </div>
             <div className="metric-item">
-              <span className="metric-label">API Calls</span>
+              <span className="metric-label">Recent Activities</span>
               <span className="metric-value">
-                {monitoringData.performanceMetrics?.apiCalls || ''}
-              </span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Error Rate</span>
-              <span className="metric-value excellent">
-                {monitoringData.performanceMetrics?.errorRate || ''}
+                {monitoringData.performanceMetrics?.recent_activities || 0}
               </span>
             </div>
           </div>
         </div>
 
         <div className="metric-card">
-          <h3>Resource Usage</h3>
+          <h3>System Health</h3>
           <div className="metric-list">
             <div className="metric-item">
-              <span className="metric-label">CPU Usage</span>
-              <div className="metric-bar">
-                <div 
-                  className="metric-bar-fill" 
-                  style={{ width: monitoringData.systemHealth?.cpuUsage || '0%' }}
-                ></div>
-                <span className="metric-value">{monitoringData.systemHealth?.cpuUsage || ''}</span>
-              </div>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Memory Usage</span>
-              <div className="metric-bar">
-                <div 
-                  className="metric-bar-fill" 
-                  style={{ width: monitoringData.systemHealth?.memoryUsage || '0%' }}
-                ></div>
-                <span className="metric-value">{monitoringData.systemHealth?.memoryUsage || ''}</span>
-              </div>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Storage Usage</span>
-              <div className="metric-bar">
-                <div 
-                  className="metric-bar-fill" 
-                  style={{ width: monitoringData.systemHealth?.storageUsage || '0%' }}
-                ></div>
-                <span className="metric-value">{monitoringData.systemHealth?.storageUsage || ''}</span>
-              </div>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Network Latency</span>
-              <span className="metric-value excellent">
-                {monitoringData.systemHealth?.networkLatency || ''}
+              <span className="metric-label">Status</span>
+              <span className={`metric-value ${monitoringData.systemHealth?.status || 'unknown'}`}>
+                {monitoringData.systemHealth?.status || 'Unknown'}
               </span>
             </div>
             <div className="metric-item">
-              <span className="metric-label">Database Health</span>
-              <span className={`metric-value ${(monitoringData.systemHealth?.databaseHealth || '').toLowerCase()}`}>
-                {monitoringData.systemHealth?.databaseHealth || ''}
+              <span className="metric-label">Database</span>
+              <span className="metric-value">
+                {monitoringData.systemHealth?.database || 'Unknown'}
+              </span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-label">Environment</span>
+              <span className="metric-value">
+                {monitoringData.systemHealth?.environment || 'N/A'}
               </span>
             </div>
           </div>
@@ -949,33 +816,21 @@ const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
           <h3>Activity Trends</h3>
           <div className="trend-metrics">
             <div className="trend-item">
-              <span className="trend-label">Reports Submitted</span>
-              <span className={`trend-value ${monitoringData.trendData?.reportsTrend?.includes('+') ? 'positive' : 'negative'}`}>
-                {monitoringData.trendData?.reportsTrend || ''}
+              <span className="trend-label">Total Reports</span>
+              <span className="trend-value">
+                {dashboardData.stats.totalReports}
               </span>
             </div>
             <div className="trend-item">
-              <span className="trend-label">Ratings Given</span>
-              <span className={`trend-value ${monitoringData.trendData?.ratingsTrend?.includes('+') ? 'positive' : 'negative'}`}>
-                {monitoringData.trendData?.ratingsTrend || ''}
+              <span className="trend-label">Total Ratings</span>
+              <span className="trend-value">
+                {dashboardData.stats.totalRatings}
               </span>
             </div>
             <div className="trend-item">
-              <span className="trend-label">Complaints Filed</span>
-              <span className={`trend-value ${monitoringData.trendData?.complaintsTrend?.includes('+') ? 'negative' : 'positive'}`}>
-                {monitoringData.trendData?.complaintsTrend || ''}
-              </span>
-            </div>
-            <div className="trend-item">
-              <span className="trend-label">User Growth</span>
-              <span className="trend-value positive">
-                {monitoringData.trendData?.userGrowth || ''}
-              </span>
-            </div>
-            <div className="trend-item">
-              <span className="trend-label">Performance</span>
-              <span className="trend-value positive">
-                {monitoringData.trendData?.performanceTrend || ''}
+              <span className="trend-label">Total Complaints</span>
+              <span className="trend-value">
+                {dashboardData.stats.totalComplaints}
               </span>
             </div>
           </div>
@@ -985,15 +840,15 @@ const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
           <h3>Recent Activity</h3>
           <div className="activity-feed">
             {monitoringData.activityLogs && monitoringData.activityLogs.length > 0 ? (
-              monitoringData.activityLogs.slice(0, 6).map(activity => (
-                <div key={activity.id} className="activity-item">
-                  <div className="activity-icon">
-                    {getActivityIcon(activity.action)}
-                  </div>
+              monitoringData.activityLogs.slice(0, 5).map((activity, index) => (
+                <div key={index} className="activity-item">
+                  <div className="activity-icon">📊</div>
                   <div className="activity-content">
-                    <p className="activity-text">{getActivityText(activity)}</p>
+                    <p className="activity-text">
+                      {activity.user_name} {activity.action} for {activity.course_name}
+                    </p>
                     <small className="activity-time">
-                      {formatTimeAgo(activity.timestamp)}
+                      {new Date(activity.created_at).toLocaleDateString()}
                     </small>
                   </div>
                 </div>
@@ -1007,58 +862,17 @@ const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
         </div>
       </div>
 
-      {/* Role-specific monitoring insights */}
-      <div className="monitoring-insights">
-        <h3>Performance Insights</h3>
-        <div className="insights-grid">
-          {user.role === 'lecturer' && (
-            <div className="insight-card">
-              <h4>📊 Teaching Performance</h4>
-              <p>Average Rating: <strong>{dashboardData.stats.averageRating.toFixed(1)}/5</strong></p>
-              <p>Total Reports: <strong>{dashboardData.stats.totalReports}</strong></p>
-              <p>Student Engagement: <strong className="positive">High</strong></p>
-            </div>
-          )}
-          
-          {user.role === 'student' && (
-            <div className="insight-card">
-              <h4>🎯 Your Activity</h4>
-              <p>Ratings Given: <strong>{dashboardData.stats.totalRatings}</strong></p>
-              <p>Reports Viewed: <strong>{dashboardData.stats.totalReports}</strong></p>
-              <p>Active Participation: <strong className="positive">Good</strong></p>
-            </div>
-          )}
-
-          {(user.role === 'pl' || user.role === 'prl' || user.role === 'fmg') && (
-            <div className="insight-card">
-              <h4>🏛️ Faculty Overview</h4>
-              <p>Pending Approvals: <strong>{dashboardData.stats.pendingReports}</strong></p>
-              <p>Active Complaints: <strong>{dashboardData.stats.pendingComplaints}</strong></p>
-              <p>System Health: <strong className="positive">Excellent</strong></p>
-            </div>
-          )}
-
-          <div className="insight-card">
-            <h4>⚙️ System Status</h4>
-            <p>Status: <strong>{monitoringData.systemHealth?.status || 'Unknown'}</strong></p>
-            <p>Response Time: <strong>{monitoringData.performanceMetrics?.responseTime || ''}</strong></p>
-            <p>Uptime: <strong>{monitoringData.performanceMetrics?.uptime || ''}</strong></p>
-          </div>
-        </div>
-      </div>
-
-      {/* Real-time Alerts */}
+      {/* Alerts Section */}
       <div className="alerts-section">
         <h3>System Alerts</h3>
         <div className="alerts-container">
           {monitoringData.alerts && monitoringData.alerts.length > 0 ? (
-            monitoringData.alerts.map(alert => (
-              <div key={alert.id} className={`alert-item ${alert.severity}`}>
-                <div className="alert-icon">{getAlertIcon(alert.severity)}</div>
+            monitoringData.alerts.map((alert, index) => (
+              <div key={index} className={`alert-item ${alert.type}`}>
+                <div className="alert-icon">⚠️</div>
                 <div className="alert-content">
-                  <p><strong>{alert.title}</strong></p>
+                  <p><strong>{alert.type.toUpperCase()} Alert</strong></p>
                   <p>{alert.message}</p>
-                  <small>{new Date(alert.timestamp).toLocaleString()}</small>
                 </div>
               </div>
             ))
@@ -1073,57 +887,7 @@ const MonitoringTab = ({ user, monitoringData, dashboardData }) => {
   );
 };
 
-// Helper functions for monitoring tab
-const getActivityIcon = (action) => {
-  const icons = {
-    'report_submitted': '📊',
-    'rating_given': '⭐',
-    'complaint_filed': '⚠️',
-    'report_approved': '✅',
-    'assignment_created': '📚',
-    'system_backup': '💾'
-  };
-  return icons[action] || '🔔';
-};
-
-const getAlertIcon = (severity) => {
-  const icons = {
-    'info': 'ℹ️',
-    'warning': '⚠️',
-    'error': '❌',
-    'success': '✅'
-  };
-  return icons[severity] || '🔔';
-};
-
-const getActivityText = (activity) => {
-  const texts = {
-    'report_submitted': `${activity.user} submitted a report`,
-    'rating_given': `${activity.user} gave a rating`,
-    'complaint_filed': `${activity.user} filed a complaint`,
-    'report_approved': `${activity.user} approved a report`,
-    'assignment_created': `${activity.user} created an assignment`,
-    'system_backup': `System backup completed`
-  };
-  return texts[activity.action] || `${activity.user} performed an action`;
-};
-
-const formatTimeAgo = (timestamp) => {
-  if (!timestamp) return 'Unknown time';
-  
-  const now = new Date();
-  const activityTime = new Date(timestamp);
-  const diff = now - activityTime;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
-
-// Updated Overview Tab with Monitoring Insights
+// Overview Tab Component
 const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
   const getPendingActions = () => {
     const actions = [];
@@ -1172,36 +936,6 @@ const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canR
         <button onClick={onRefresh} className="btn btn-secondary">
           Refresh Data
         </button>
-      </div>
-
-      {/* Quick Monitoring Stats */}
-      <div className="quick-monitoring">
-        <div className="monitoring-cards">
-          <div className="monitoring-card">
-            <div className="monitoring-icon">⚡</div>
-            <div className="monitoring-content">
-              <h4>Performance</h4>
-              <p>Response: {monitoringData.performanceMetrics?.responseTime || ''}</p>
-              <p>Uptime: {monitoringData.performanceMetrics?.uptime || ''}</p>
-            </div>
-          </div>
-          <div className="monitoring-card">
-            <div className="monitoring-icon">👥</div>
-            <div className="monitoring-content">
-              <h4>Usage</h4>
-              <p>Active Users: {monitoringData.performanceMetrics?.activeUsers || 0}</p>
-              <p>API Calls: {monitoringData.performanceMetrics?.apiCalls || ''}</p>
-            </div>
-          </div>
-          <div className="monitoring-card">
-            <div className="monitoring-icon">📈</div>
-            <div className="monitoring-content">
-              <h4>Trends</h4>
-              <p>Reports: <span className={`trend ${monitoringData.trendData?.reportsTrend?.includes('+') ? 'positive' : 'negative'}`}>{monitoringData.trendData?.reportsTrend || ''}</span></p>
-              <p>Ratings: <span className={`trend ${monitoringData.trendData?.ratingsTrend?.includes('+') ? 'positive' : 'negative'}`}>{monitoringData.trendData?.ratingsTrend || ''}</span></p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {pendingActions.length > 0 && (
@@ -1272,7 +1006,7 @@ const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canR
   );
 };
 
-// New Rate Lectures Tab Component
+// Rate Lectures Tab Component
 const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedReport }) => {
   const [filterFaculty, setFilterFaculty] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
@@ -1385,7 +1119,7 @@ const RateLecturesTab = ({ user, reports, onRateReport, canRateReport, hasRatedR
   );
 };
 
-// Updated My Ratings Tab Component
+// My Ratings Tab Component
 const MyRatingsTab = ({ ratings, user }) => {
   const renderStars = (ratingValue) => {
     return '⭐'.repeat(ratingValue);
@@ -1448,7 +1182,7 @@ const MyRatingsTab = ({ ratings, user }) => {
   );
 };
 
-// Updated Pending Reports Tab for Management
+// Pending Reports Tab Component
 const PendingReportsTab = ({ reports, user, onRateReport, canRateReport, hasRatedReport }) => {
   const getStatusBadge = (status) => {
     const statusConfig = {
@@ -1525,7 +1259,7 @@ const PendingReportsTab = ({ reports, user, onRateReport, canRateReport, hasRate
   );
 };
 
-// Complaints Tab for Management
+// Complaints Tab Component
 const ComplaintsTab = ({ complaints, user }) => {
   // Ensure complaints is an array
   const complaintsArray = Array.isArray(complaints) ? complaints : [];
@@ -1570,7 +1304,7 @@ const ComplaintsTab = ({ complaints, user }) => {
   );
 };
 
-// Other tab components (with array safety checks)
+// Assignments Tab Component
 const AssignmentsTab = ({ assignments }) => {
   const assignmentsArray = Array.isArray(assignments) ? assignments : [];
   
@@ -1606,6 +1340,7 @@ const AssignmentsTab = ({ assignments }) => {
   );
 };
 
+// My Reports Tab Component
 const MyReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) => {
   const reportsArray = Array.isArray(reports) ? reports : [];
   
@@ -1660,6 +1395,7 @@ const MyReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) 
   );
 };
 
+// Class Reports Tab Component
 const ClassReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) => {
   const reportsArray = Array.isArray(reports) ? reports : [];
   
@@ -1714,6 +1450,7 @@ const ClassReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport 
   );
 };
 
+// My Complaints Tab Component
 const MyComplaintsTab = ({ complaints }) => {
   const complaintsArray = Array.isArray(complaints) ? complaints : [];
   

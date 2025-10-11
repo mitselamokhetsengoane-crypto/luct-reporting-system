@@ -7,14 +7,15 @@ const reportRoutes = require('./routes/reports');
 const complaintRoutes = require('./routes/complaints');
 const assignmentRoutes = require('./routes/assignments');
 const ratingRoutes = require('./routes/ratings');
+const monitoringRoutes = require('./routes/monitoring'); // ADDED: Monitoring routes
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enhanced CORS configuration - FIXED
+// Enhanced CORS configuration
 const corsOptions = {
   origin: [
-    'https://luct-reporting-system-3-tpuc.onrender.com', // Your actual frontend URL
+    'https://luct-reporting-system-3-tpuc.onrender.com',
     'http://localhost:3000',
     'http://localhost:5000'
   ],
@@ -70,6 +71,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/ratings', ratingRoutes);
+app.use('/api/monitoring', monitoringRoutes); // ADDED: Monitoring routes
 
 // Public Dashboard Route
 app.get('/api/public/dashboard', async (req, res) => {
@@ -241,7 +243,8 @@ app.get('/', (req, res) => {
       health: '/api/health',
       test: '/api/test',
       database: '/api/health/db',
-      public: '/api/public/dashboard'
+      public: '/api/public/dashboard',
+      monitoring: '/api/monitoring' // ADDED: Monitoring endpoint
     }
   });
 });
@@ -272,5 +275,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 Health check: /api/health`);
   console.log(`🗄️  Database health: /api/health/db`);
   console.log(`📝 Test endpoint: /api/test`);
+  console.log(`📈 Monitoring endpoints: /api/monitoring/*`); // ADDED: Monitoring info
   console.log(`📍 Server URL: http://0.0.0.0:${PORT}`);
 });

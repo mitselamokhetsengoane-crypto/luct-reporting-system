@@ -58,7 +58,7 @@ function App() {
       <div className="App">
         <header className="app-header">
           <div className="header-content">
-            <h1 className="header-title">LUCT Reporting System</h1> 
+           
           </div>
           {user && (
             <div className="user-info">

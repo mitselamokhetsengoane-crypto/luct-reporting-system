@@ -16,7 +16,7 @@ class Rating {
     return result.rows[0];
   }
 
-  // Find ratings by lecturer with proper joins
+  // Find ratings by lecturer with proper joins - FIXED department_name reference
   static async findByLecturer(lecturerId) {
     const query = `
       SELECT 
@@ -26,11 +26,12 @@ class Rating {
         rep.date_of_lecture,
         c.course_name,
         c.course_code,
-        rep.department_name
+        cl.department_name  -- FIXED: Changed from rep.department_name to cl.department_name
       FROM ratings r
       LEFT JOIN users u ON r.user_id = u.id
       LEFT JOIN reports rep ON r.report_id = rep.id
       LEFT JOIN courses c ON rep.course_id = c.id
+      LEFT JOIN classes cl ON rep.class_id = cl.id  -- ADDED: Join with classes table
       WHERE r.lecturer_id = $1
       ORDER BY r.created_at DESC
     `;
@@ -39,7 +40,7 @@ class Rating {
     return result.rows;
   }
 
-  // Find ratings by user with proper joins
+  // Find ratings by user with proper joins - FIXED department_name reference
   static async findByUser(userId) {
     const query = `
       SELECT 
@@ -49,11 +50,12 @@ class Rating {
         rep.date_of_lecture,
         c.course_name,
         c.course_code,
-        rep.department_name
+        cl.department_name  -- FIXED: Changed from rep.department_name to cl.department_name
       FROM ratings r
       LEFT JOIN users u ON r.lecturer_id = u.id
       LEFT JOIN reports rep ON r.report_id = rep.id
       LEFT JOIN courses c ON rep.course_id = c.id
+      LEFT JOIN classes cl ON rep.class_id = cl.id  -- ADDED: Join with classes table
       WHERE r.user_id = $1
       ORDER BY r.created_at DESC
     `;
