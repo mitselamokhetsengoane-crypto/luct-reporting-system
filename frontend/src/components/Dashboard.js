@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { reportAPI, complaintAPI, assignmentAPI, ratingAPI, monitoringAPI } from '../services/api';
+import { reportAPI, complaintAPI, assignmentAPI, ratingAPI } from '../services/api';
 
 const Dashboard = ({ user, onLogout }) => {
   const [dashboardData, setDashboardData] = useState({
@@ -27,13 +27,6 @@ const Dashboard = ({ user, onLogout }) => {
     rating_type: 'lecture_quality',
     comment: ''
   });
-  const [monitoringData, setMonitoringData] = useState({
-    performanceMetrics: {},
-    systemHealth: {},
-    activityLogs: [],
-    trendData: {},
-    alerts: []
-  });
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [complaintForm, setComplaintForm] = useState({
     title: '',
@@ -44,7 +37,6 @@ const Dashboard = ({ user, onLogout }) => {
 
   useEffect(() => {
     loadDashboardData();
-    loadMonitoringData();
   }, [user]);
 
   const loadDashboardData = async () => {
@@ -174,50 +166,6 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const loadMonitoringData = async () => {
-    try {
-      console.log('Loading monitoring data...');
-      
-      const [
-        performanceResponse,
-        healthResponse,
-        activityResponse,
-        trendsResponse,
-        alertsResponse
-      ] = await Promise.allSettled([
-        monitoringAPI.getPerformanceMetrics(),
-        monitoringAPI.getSystemHealth(),
-        monitoringAPI.getActivityLogs('7d'),
-        monitoringAPI.getTrendData(),
-        monitoringAPI.getAlerts()
-      ]);
-
-      const performanceMetrics = handleAPIResponse(performanceResponse, 'performance metrics') || {};
-      const systemHealth = handleAPIResponse(healthResponse, 'system health') || {};
-      const activityLogs = handleAPIResponse(activityResponse, 'activity logs') || [];
-      const trendData = handleAPIResponse(trendsResponse, 'trend data') || {};
-      const alerts = handleAPIResponse(alertsResponse, 'alerts') || [];
-
-      setMonitoringData({
-        performanceMetrics,
-        systemHealth,
-        activityLogs: Array.isArray(activityLogs) ? activityLogs : [],
-        trendData,
-        alerts: Array.isArray(alerts) ? alerts : []
-      });
-
-    } catch (error) {
-      console.error('Error loading monitoring data:', error);
-      setMonitoringData({
-        performanceMetrics: {},
-        systemHealth: { status: 'unknown' },
-        activityLogs: [],
-        trendData: {},
-        alerts: []
-      });
-    }
-  };
-
   const handleAPIResponse = (promiseResult, dataType) => {
     if (promiseResult.status === 'fulfilled') {
       const response = promiseResult.value;
@@ -325,12 +273,19 @@ const Dashboard = ({ user, onLogout }) => {
   const handleComplaintSubmit = async (e) => {
     e.preventDefault();
     try {
-      const complaintData = {
-        title: complaintForm.title,
-        description: complaintForm.description,
-        complaint_against_id: complaintForm.complaint_against_id,
-        complaint_type: complaintForm.complaint_type
-      };
+      // Validate required fields
+      if (!complaintForm.title || !complaintForm.description || !complaintForm.complaint_against_id) {
+        alert('Please fill in all required fields: Title, Description, and Complaint Target');
+        return;
+      }
+
+     const complaintData = {
+  title: complaintForm.title,
+  description: complaintForm.description,
+  target: complaintForm.complaint_against_id, // ✅ fix name to match backend
+  complaint_type: complaintForm.complaint_type
+};
+
 
       console.log('Submitting complaint:', complaintData);
       await complaintAPI.create(complaintData);
@@ -341,7 +296,7 @@ const Dashboard = ({ user, onLogout }) => {
       alert('Complaint submitted successfully!');
     } catch (error) {
       console.error('Error submitting complaint:', error);
-      alert('Failed to submit complaint. Please try again.');
+      alert('Failed to submit complaint: ' + (error.response?.data?.message || 'Please check all fields'));
     }
   };
 
@@ -531,6 +486,20 @@ const Dashboard = ({ user, onLogout }) => {
               </div>
 
               <div className="form-group">
+                <label>Complaint Against:</label>
+                <select 
+                  value={complaintForm.complaint_against_id}
+                  onChange={(e) => handleComplaintChange('complaint_against_id', e.target.value)}
+                  required
+                >
+                  <option value="">Select Person</option>
+                  <option value="1">Lecturer 1</option>
+                  <option value="2">Lecturer 2</option>
+                  <option value="3">Program Leader</option>
+                </select>
+              </div>
+
+              <div className="form-group">
                 <label>Complaint Type:</label>
                 <select 
                   value={complaintForm.complaint_type}
@@ -713,7 +682,6 @@ const Dashboard = ({ user, onLogout }) => {
           <OverviewTab 
             user={user} 
             data={dashboardData} 
-            monitoringData={monitoringData}
             onRefresh={loadDashboardData}
             onRateReport={openRatingModal}
             canRateReport={canRateReport}
@@ -1057,7 +1025,7 @@ const MyComplaintsTab = ({ complaints, user, onNewComplaint }) => {
 };
 
 // Other Tab Components
-const OverviewTab = ({ user, data, monitoringData, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
+const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
   const getPendingActions = () => {
     const actions = [];
     

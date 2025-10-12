@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { publicAPI } from '../services/api';
+import { publicAPI, retryRequest } from '../services/api';
 import { Link } from 'react-router-dom';
 
 const PublicDashboard = () => {
@@ -14,27 +14,30 @@ const PublicDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
-  useEffect(() => {
-    loadPublicData();
-  }, []);
-
-  const loadPublicData = async () => {
+  const loadPublicData = async (isRetry = false) => {
     try {
-      setLoading(true);
+      if (!isRetry) setLoading(true);
       setError(null);
-      const response = await publicAPI.getDashboardData();
-      
+
+      // Use retry logic for public dashboard
+      const response = await retryRequest(
+        () => publicAPI.getDashboardData(),
+        2, // max retries
+        2000 // initial delay
+      );
+
       if (response.data) {
         setDashboardData(response.data);
+        setRetryCount(0);
       } else {
         throw new Error('No data received from server');
       }
     } catch (error) {
       console.error('Error loading public data:', error);
-      setError('Unable to load dashboard data. The system may be initializing. Please try again later.');
       
-      // Set minimal default data to prevent complete failure
+      // Set fallback data
       setDashboardData({
         totalReports: 0,
         totalStudents: 0,
@@ -48,10 +51,37 @@ const PublicDashboard = () => {
         ],
         popularCourses: []
       });
+
+      // Enhanced error messages
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        setError('Dashboard is taking longer than usual to load. Please try again in a moment.');
+      } else if (error.response?.status === 500) {
+        setError('Server is currently unavailable. Please try again later.');
+      } else if (error.response?.status === 404) {
+        setError('Dashboard endpoint not found. The system may be under maintenance.');
+      } else {
+        setError('Unable to load dashboard data. Please check your connection and try again.');
+      }
+      
+      setRetryCount(prev => prev + 1);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadPublicData();
+  }, []);
+
+  // Auto-retry after delay if timeout occurs
+  useEffect(() => {
+    if (error && retryCount < 2) {
+      const timer = setTimeout(() => {
+        loadPublicData(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, retryCount]);
 
   if (loading) {
     return (
@@ -63,6 +93,13 @@ const PublicDashboard = () => {
           fontSize: '1.2rem'
         }}>
           Loading public dashboard...
+          <div style={{ 
+            marginTop: '1rem',
+            fontSize: '0.9rem',
+            color: '#666'
+          }}>
+            This may take a moment on first load
+          </div>
         </div>
       </div>
     );
@@ -88,21 +125,30 @@ const PublicDashboard = () => {
 
       {/* Error Message */}
       {error && (
-        <div className="error-message">
+        <div className="error-message" style={{
+          background: '#fff3cd',
+          border: '1px solid #ffeaa7',
+          color: '#856404',
+          padding: '1rem',
+          margin: '1rem',
+          borderRadius: '4px',
+          textAlign: 'center'
+        }}>
           <strong>Note:</strong> {error}
           <button 
-            onClick={loadPublicData}
+            onClick={() => loadPublicData(true)}
             style={{
               marginLeft: '1rem',
               background: '#e67e22',
               color: 'white',
               border: 'none',
-              padding: '0.25rem 0.75rem',
+              padding: '0.5rem 1rem',
               borderRadius: '4px',
               cursor: 'pointer'
             }}
+            disabled={retryCount >= 3}
           >
-            Retry
+            {retryCount >= 3 ? 'Max Retries' : 'Try Again'}
           </button>
         </div>
       )}
@@ -110,7 +156,6 @@ const PublicDashboard = () => {
       {/* Welcome Section */}
       <div className="welcome-section">
         <h1>Welcome to LUCT Reporting System</h1>
-        
         
         <div className="welcome-stats">
           <div className="welcome-stat">
@@ -142,14 +187,22 @@ const PublicDashboard = () => {
           <Link to="/login" className="btn btn-primary" style={{ 
             textDecoration: 'none',
             padding: '0.75rem 2rem',
-            fontSize: '1.1rem'
+            fontSize: '1.1rem',
+            background: '#e67e22',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px'
           }}>
-           Login to System
+            Login to System
           </Link>
           <Link to="/register" className="btn btn-secondary" style={{ 
             textDecoration: 'none',
             padding: '0.75rem 2rem',
-            fontSize: '1.1rem'
+            fontSize: '1.1rem',
+            background: 'transparent',
+            color: '#e67e22',
+            border: '2px solid #e67e22',
+            borderRadius: '4px'
           }}>
             Create Account
           </Link>
@@ -163,28 +216,24 @@ const PublicDashboard = () => {
           <h2>System Overview</h2>
           <div className="stats-grid">
             <div className="stat-card">
-              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalReports}</h3>
                 <p>Total Reports</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalStudents}</h3>
                 <p>Registered Students</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalLecturers}</h3>
                 <p>Academic Staff</p>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon"></div>
               <div className="stat-info">
                 <h3 className="number">{dashboardData.totalCourses}</h3>
                 <p>Courses Offered</p>
@@ -195,7 +244,7 @@ const PublicDashboard = () => {
 
         {/* Faculty Performance */}
         <div className="faculty-stats">
-          <h2> Faculty Performance</h2>
+          <h2>Faculty Performance</h2>
           <div className="faculty-cards">
             {dashboardData.facultyStats.map((faculty, index) => (
               <div key={index} className="faculty-card">
@@ -217,14 +266,11 @@ const PublicDashboard = () => {
 
         {/* Recent Activities */}
         <div className="recent-activities">
-          <h2> Recent Activities</h2>
+          <h2>Recent Activities</h2>
           <div className="activities-list">
             {dashboardData.recentActivities.length > 0 ? (
               dashboardData.recentActivities.map((activity, index) => (
                 <div key={index} className="activity-item">
-                  <div className="activity-icon">
-                    {activity.type === 'report' ? '' : ''}
-                  </div>
                   <div className="activity-content">
                     <p>{activity.description}</p>
                     <span className="activity-time">{activity.time}</span>
@@ -241,7 +287,7 @@ const PublicDashboard = () => {
 
         {/* Popular Courses */}
         <div className="popular-courses">
-          <h2> Popular Courses</h2>
+          <h2>Popular Courses</h2>
           <div className="courses-list">
             {dashboardData.popularCourses.length > 0 ? (
               dashboardData.popularCourses.map((course, index) => (
@@ -266,22 +312,22 @@ const PublicDashboard = () => {
 
       {/* System Features */}
       <div className="system-info">
-        <h2> System Features</h2>
+        <h2>System Features</h2>
         <div className="info-cards">
           <div className="info-card">
-            <h3> Smart Reporting</h3>
+            <h3>Smart Reporting</h3>
             <p>Easily submit detailed lecture reports with attendance, topics covered, and learning outcomes.</p>
           </div>
           <div className="info-card">
-            <h3> Student Verification</h3>
+            <h3>Student Verification</h3>
             <p>Class representatives verify reports to ensure accuracy and transparency.</p>
           </div>
           <div className="info-card">
-            <h3> Progress Monitoring</h3>
+            <h3>Progress Monitoring</h3>
             <p>Principal lecturers monitor academic progress and provide timely feedback.</p>
           </div>
           <div className="info-card">
-            <h3> Instant Feedback</h3>
+            <h3>Instant Feedback</h3>
             <p>Streamlined communication between students, lecturers, and administrators.</p>
           </div>
         </div>
@@ -298,7 +344,9 @@ const PublicDashboard = () => {
             background: 'white',
             color: '#e67e22',
             textDecoration: 'none',
-            padding: '0.75rem 2rem'
+            padding: '0.75rem 2rem',
+            border: 'none',
+            borderRadius: '4px'
           }}>
             Login Now
           </Link>
@@ -307,7 +355,8 @@ const PublicDashboard = () => {
             color: 'white',
             border: '2px solid white',
             textDecoration: 'none',
-            padding: '0.75rem 2rem'
+            padding: '0.75rem 2rem',
+            borderRadius: '4px'
           }}>
             Get Started
           </Link>
