@@ -266,7 +266,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
     }));
   };
 
-  // Complaint Functions
+  // Complaint Functions - FIXED
   const openComplaintModal = () => {
     setComplaintForm({
       title: '',
@@ -292,15 +292,24 @@ const EnhancedDashboard = ({ user, onLogout }) => {
   const handleComplaintSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (!complaintForm.title || !complaintForm.description || !complaintForm.complaint_against_id) {
-        alert('Please fill in all required fields: Title, Description, and Complaint Target');
+      // Enhanced validation
+      if (!complaintForm.title?.trim()) {
+        alert('Please enter a complaint title');
+        return;
+      }
+      if (!complaintForm.description?.trim()) {
+        alert('Please enter a complaint description');
+        return;
+      }
+      if (!complaintForm.complaint_against_id) {
+        alert('Please select who you are complaining against');
         return;
       }
 
       const complaintData = {
-        title: complaintForm.title,
-        description: complaintForm.description,
-        target: complaintForm.complaint_against_id,
+        title: complaintForm.title.trim(),
+        description: complaintForm.description.trim(),
+        complaint_against_id: complaintForm.complaint_against_id,
         complaint_type: complaintForm.complaint_type,
         priority: complaintForm.priority
       };
@@ -314,7 +323,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
       alert('Complaint submitted successfully!');
     } catch (error) {
       console.error('Error submitting complaint:', error);
-      alert('Failed to submit complaint: ' + (error.response?.data?.message || 'Please check all fields'));
+      alert('Failed to submit complaint: ' + (error.message || 'Please check all fields'));
     }
   };
 
@@ -325,7 +334,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
     }));
   };
 
-  // Report Generation Functions
+  // Report Generation Functions - FIXED
   const handleGenerateReport = async (reportType, filters = {}) => {
     setReportGenerationLoading(true);
     try {
@@ -368,7 +377,12 @@ const EnhancedDashboard = ({ user, onLogout }) => {
       alert('Report generated successfully!');
     } catch (error) {
       console.error('Error generating report:', error);
-      alert('Failed to generate report: ' + error.message);
+      // Enhanced error handling for 404
+      if (error.message.includes('404') || error.message.includes('Not Found')) {
+        alert('Report generation feature is currently unavailable. Please try again later.');
+      } else {
+        alert('Failed to generate report: ' + error.message);
+      }
     } finally {
       setReportGenerationLoading(false);
     }
@@ -538,7 +552,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* Complaint Modal */}
+      {/* Complaint Modal - FIXED */}
       {showComplaintModal && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -548,7 +562,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             </div>
             <form onSubmit={handleComplaintSubmit} className="complaint-form">
               <div className="form-group">
-                <label>Title:</label>
+                <label>Title: *</label>
                 <input
                   type="text"
                   value={complaintForm.title}
@@ -559,7 +573,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
               </div>
 
               <div className="form-group">
-                <label>Description:</label>
+                <label>Description: *</label>
                 <textarea
                   value={complaintForm.description}
                   onChange={(e) => handleComplaintChange('description', e.target.value)}
@@ -570,7 +584,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
               </div>
 
               <div className="form-group">
-                <label>Complaint Against:</label>
+                <label>Complaint Against: *</label>
                 <select 
                   value={complaintForm.complaint_against_id}
                   onChange={(e) => handleComplaintChange('complaint_against_id', e.target.value)}
@@ -590,7 +604,6 @@ const EnhancedDashboard = ({ user, onLogout }) => {
                 <select 
                   value={complaintForm.complaint_type}
                   onChange={(e) => handleComplaintChange('complaint_type', e.target.value)}
-                  required
                 >
                   <option value="student_lecturer">Against Lecturer</option>
                   <option value="lecturer_prl">Against Program Review Leader</option>
@@ -604,7 +617,6 @@ const EnhancedDashboard = ({ user, onLogout }) => {
                 <select 
                   value={complaintForm.priority}
                   onChange={(e) => handleComplaintChange('priority', e.target.value)}
-                  required
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -635,6 +647,11 @@ const EnhancedDashboard = ({ user, onLogout }) => {
           <button onClick={loadDashboardData} className="btn btn-outline">
             Refresh Data
           </button>
+          {user.role === 'student' && (
+            <button onClick={openComplaintModal} className="btn btn-primary">
+              File Complaint
+            </button>
+          )}
           <button onClick={onLogout} className="btn btn-secondary">
             Logout
           </button>
@@ -800,6 +817,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             onRateReport={openRatingModal}
             canRateReport={canRateReport}
             hasRatedReport={hasRatedReport}
+            onFileComplaint={openComplaintModal}
           />
         )}
 
@@ -890,7 +908,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
   );
 };
 
-// Report Generation Component
+// Report Generation Component - FIXED
 const ReportGenerationTab = ({ user, reports, assignments, onGenerateReport, loading }) => {
   const [filters, setFilters] = useState({
     startDate: '',
@@ -1398,7 +1416,7 @@ const MyComplaintsTab = ({ complaints, user, onNewComplaint }) => {
 };
 
 // Other Tab Components
-const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRatedReport }) => {
+const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRatedReport, onFileComplaint }) => {
   const getPendingActions = () => {
     const actions = [];
     
@@ -1442,9 +1460,16 @@ const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRa
     <div className="overview-tab">
       <div className="tab-header">
         <h2>Quick Overview</h2>
-        <button onClick={onRefresh} className="btn btn-secondary">
-          Refresh Data
-        </button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          {user.role === 'student' && (
+            <button onClick={onFileComplaint} className="btn btn-primary">
+              File Complaint
+            </button>
+          )}
+          <button onClick={onRefresh} className="btn btn-secondary">
+            Refresh Data
+          </button>
+        </div>
       </div>
 
       {pendingActions.length > 0 && (

@@ -10,7 +10,7 @@ const getApiBaseUrl = () => {
 
 const API = axios.create({
   baseURL: getApiBaseUrl(),
-  timeout: 30000, // Reduced timeout for better UX
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -79,7 +79,7 @@ API.interceptors.response.use(
   }
 );
 
-// Enhanced API methods with better error handling
+// Enhanced API methods with better error handling and validation
 export const authAPI = {
   login: (credentials) => {
     console.log('Login attempt:', { email: credentials.email });
@@ -144,24 +144,27 @@ export const reportAPI = {
     return API.get('/reports/pending-approval');
   },
   
-  // NEW: Enhanced report generation endpoints
+  // FIXED: Enhanced report generation endpoints with proper validation
   generatePerformanceReport: (filters) => {
     console.log('Generating performance report:', filters);
-    return API.post('/reports/generate/performance', filters, { 
+    const validatedFilters = validateReportFilters(filters);
+    return API.post('/reports/generate/performance', validatedFilters, { 
       responseType: 'blob',
-      timeout: 60000 // Longer timeout for report generation
+      timeout: 60000
     });
   },
   generateAttendanceReport: (filters) => {
     console.log('Generating attendance report:', filters);
-    return API.post('/reports/generate/attendance', filters, { 
+    const validatedFilters = validateReportFilters(filters);
+    return API.post('/reports/generate/attendance', validatedFilters, { 
       responseType: 'blob',
       timeout: 60000
     });
   },
   generateFacultyReport: (filters) => {
     console.log('Generating faculty report:', filters);
-    return API.post('/reports/generate/faculty', filters, { 
+    const validatedFilters = validateReportFilters(filters);
+    return API.post('/reports/generate/faculty', validatedFilters, { 
       responseType: 'blob',
       timeout: 60000
     });
@@ -176,8 +179,14 @@ export const complaintAPI = {
   create: (complaintData) => {
     console.log('Creating complaint:', { 
       title: complaintData.title,
-      against: complaintData.target || complaintData.complaint_against_id
+      against: complaintData.complaint_against_id
     });
+    
+    // Validate required fields before sending
+    if (!complaintData.title || !complaintData.description || !complaintData.complaint_against_id) {
+      return Promise.reject(new Error('Title, description, and complaint target are required'));
+    }
+    
     return API.post('/complaints', complaintData);
   },
   getMyComplaints: () => {
@@ -205,7 +214,7 @@ export const complaintAPI = {
     return API.get('/complaints/download/my-complaints', { responseType: 'blob' });
   },
   
-  // NEW: Enhanced complaint reporting
+  // Enhanced complaint reporting
   generateComplaintReport: (filters) => {
     console.log('Generating complaint report:', filters);
     return API.post('/complaints/generate-report', filters, { 
@@ -239,6 +248,12 @@ export const assignmentAPI = {
       class: assignmentData.class_id,
       type: assignmentData.assignment_type
     });
+    
+    // Validate assignment data
+    if (!assignmentData.course_id || !assignmentData.lecturer_id || !assignmentData.class_id) {
+      return Promise.reject(new Error('Course, lecturer, and class are required'));
+    }
+    
     return API.post('/assignments/assign', assignmentData);
   },
   getMyAssignments: () => {
@@ -258,7 +273,7 @@ export const assignmentAPI = {
     return API.get('/assignments/download/assignments', { responseType: 'blob' });
   },
   
-  // NEW: Enhanced assignment reporting
+  // Enhanced assignment reporting
   generateAssignmentReport: (type) => {
     console.log('Generating assignment report:', { type });
     return API.get(`/assignments/reports/${type}`, { 
@@ -310,7 +325,7 @@ export const ratingAPI = {
     return API.delete(`/ratings/${ratingId}`);
   },
   
-  // NEW: Rating statistics
+  // Rating statistics
   getRatingStatistics: (lecturerId) => {
     console.log('Fetching rating statistics:', { lecturerId });
     return API.get(`/ratings/statistics/${lecturerId}`);
@@ -322,20 +337,18 @@ export const publicAPI = {
   getDashboardData: async () => {
     console.log('Fetching public dashboard data');
     
-    // Check cache first
     const cacheKey = 'public-dashboard';
     const cached = apiCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 2 * 60 * 1000) { // 2 minutes cache
+    if (cached && Date.now() - cached.timestamp < 2 * 60 * 1000) {
       console.log('Serving public dashboard from cache');
       return { data: cached.data };
     }
 
     try {
       const response = await API.get('/public/dashboard', {
-        timeout: 15000, // Shorter timeout for public data
+        timeout: 15000,
       });
 
-      // Cache successful response
       apiCache.set(cacheKey, {
         data: response.data,
         timestamp: Date.now()
@@ -343,7 +356,6 @@ export const publicAPI = {
 
       return response;
     } catch (error) {
-      // If online request fails but we have cached data, use it
       if (cached) {
         console.log('Using cached data due to API error');
         return { data: cached.data };
@@ -351,6 +363,26 @@ export const publicAPI = {
       throw error;
     }
   },
+};
+
+// Validation helper functions
+const validateReportFilters = (filters) => {
+  const validated = { ...filters };
+  
+  // Ensure dates are properly formatted
+  if (validated.startDate && !isValidDate(validated.startDate)) {
+    delete validated.startDate;
+  }
+  if (validated.endDate && !isValidDate(validated.endDate)) {
+    delete validated.endDate;
+  }
+  
+  return validated;
+};
+
+const isValidDate = (dateString) => {
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date);
 };
 
 // Enhanced retry utility
@@ -364,7 +396,6 @@ export const retryRequest = async (requestFn, maxRetries = 2, delay = 2000) => {
     } catch (error) {
       console.warn(`Request failed on attempt ${attempt}:`, error.message);
       
-      // Don't retry on client errors (4xx)
       if (error.response?.status >= 400 && error.response?.status < 500) {
         throw error;
       }
@@ -374,7 +405,6 @@ export const retryRequest = async (requestFn, maxRetries = 2, delay = 2000) => {
         throw error;
       }
       
-      // Exponential backoff
       const waitTime = delay * Math.pow(2, attempt - 1);
       console.log(`Waiting ${waitTime}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
