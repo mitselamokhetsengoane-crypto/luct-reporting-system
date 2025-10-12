@@ -2,19 +2,190 @@ const pool = require('../config/database');
 const Report = require('../models/Report');
 
 const reportController = {
-  // ... (keep all your existing functions: createReport, getMyReports, etc.)
+  // EXISTING FUNCTIONS - MAKE SURE THESE ARE INCLUDED
+  createReport: async (req, res) => {
+    try {
+      const {
+        faculty, class_id, week_number, date_of_lecture, course_id,
+        students_present, venue, scheduled_time, topic_taught,
+        learning_outcomes, recommendations
+      } = req.body;
 
-  // FIXED: Generate performance report with real data
+      // Validate required fields
+      if (!faculty || !class_id || !week_number || !date_of_lecture || !course_id || 
+          !students_present || !venue || !scheduled_time || !topic_taught || !learning_outcomes) {
+        return res.status(400).json({ message: 'All required fields must be filled' });
+      }
+
+      const reportData = {
+        faculty,
+        class_id,
+        week_number,
+        date_of_lecture,
+        course_id,
+        lecturer_id: req.user.id,
+        students_present,
+        venue,
+        scheduled_time,
+        topic_taught,
+        learning_outcomes,
+        recommendations: recommendations || ''
+      };
+
+      const report = await Report.create(reportData);
+      res.status(201).json({ 
+        message: 'Report created successfully and sent to students for signing', 
+        report 
+      });
+    } catch (error) {
+      console.error('Error creating report:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  getMyReports: async (req, res) => {
+    try {
+      const reports = await Report.findByLecturer(req.user.id);
+      res.json(reports);
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  getClassReports: async (req, res) => {
+    try {
+      const { classId } = req.params;
+      const reports = await Report.findByClass(classId);
+      res.json(reports);
+    } catch (error) {
+      console.error('Error fetching class reports:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  signReport: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { signature } = req.body;
+
+      if (!signature) {
+        return res.status(400).json({ message: 'Signature is required' });
+      }
+
+      const report = await Report.findById(id);
+      
+      if (!report) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+
+      if (req.user.role !== 'student') {
+        return res.status(403).json({ message: 'Only students can sign reports' });
+      }
+
+      if (report.class_id !== req.user.class_id) {
+        return res.status(403).json({ message: 'You can only sign reports for your class' });
+      }
+
+      if (report.status !== 'pending_student') {
+        return res.status(400).json({ message: 'Report is not available for signing' });
+      }
+
+      const updatedReport = await Report.updateStatus(id, 'pending_prl', signature);
+      
+      res.json({ 
+        message: 'Report signed successfully and sent to PRL for approval', 
+        report: updatedReport 
+      });
+    } catch (error) {
+      console.error('Error signing report:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  approveReport: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      if (req.user.role !== 'prl' && req.user.role !== 'pl') {
+        return res.status(403).json({ message: 'Only PRL or PL can approve reports' });
+      }
+
+      const report = await Report.findById(id);
+      
+      if (!report) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+
+      if (report.status !== 'pending_prl') {
+        return res.status(400).json({ message: 'Report is not available for approval' });
+      }
+
+      const updatedReport = await Report.updateStatus(id, 'approved');
+      
+      res.json({ 
+        message: 'Report approved successfully', 
+        report: updatedReport 
+      });
+    } catch (error) {
+      console.error('Error approving report:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  getReportById: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const report = await Report.findById(id);
+      
+      if (!report) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+
+      res.json(report);
+    } catch (error) {
+      console.error('Error fetching report:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  downloadMyReports: async (req, res) => {
+    try {
+      const reports = await Report.findByLecturer(req.user.id);
+      const csvData = convertToCSV(reports);
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=my-reports.csv');
+      res.send(csvData);
+    } catch (error) {
+      console.error('Error downloading reports:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  getPendingApprovalReports: async (req, res) => {
+    try {
+      if (req.user.role !== 'prl' && req.user.role !== 'pl') {
+        return res.status(403).json({ message: 'Only PRL or PL can view pending approval reports' });
+      }
+
+      const reports = await Report.findPendingApproval(req.user.faculty);
+      res.json(reports);
+    } catch (error) {
+      console.error('Error fetching pending approval reports:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  },
+
+  // NEW REPORT GENERATION FUNCTIONS
   generatePerformanceReport: async (req, res) => {
     try {
       const filters = req.body;
       
-      // Only allow lecturers, PRL, PL to generate reports
       if (!['lecturer', 'principal_lecturer', 'prl', 'pl'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Not authorized to generate reports' });
       }
 
-      // Query real performance data from database
       const performanceData = await getPerformanceReportData(filters, req.user);
       const csvData = convertPerformanceToCSV(performanceData);
       
@@ -27,17 +198,14 @@ const reportController = {
     }
   },
 
-  // FIXED: Generate attendance report with real data
   generateAttendanceReport: async (req, res) => {
     try {
       const filters = req.body;
       
-      // Only allow lecturers, PRL, PL to generate reports
       if (!['lecturer', 'principal_lecturer', 'prl', 'pl'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Not authorized to generate reports' });
       }
 
-      // Query real attendance data from database
       const attendanceData = await getAttendanceReportData(filters, req.user);
       const csvData = convertAttendanceToCSV(attendanceData);
       
@@ -50,17 +218,14 @@ const reportController = {
     }
   },
 
-  // FIXED: Generate faculty report with real data
   generateFacultyReport: async (req, res) => {
     try {
       const filters = req.body;
       
-      // Only allow PRL, PL, FMG to generate faculty reports
       if (!['prl', 'pl', 'fmg'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Not authorized to generate faculty reports' });
       }
 
-      // Query real faculty data from database
       const facultyData = await getFacultyReportData(filters, req.user);
       const csvData = convertFacultyToCSV(facultyData);
       
@@ -76,8 +241,6 @@ const reportController = {
   getReportStatistics: async (req, res) => {
     try {
       const { userId } = req.params;
-      
-      // Enhanced statistics with real data
       const statistics = await getReportStatisticsData(userId);
       res.json(statistics);
     } catch (error) {
@@ -87,9 +250,7 @@ const reportController = {
   }
 };
 
-// REAL DATABASE QUERIES - NO HARDCODED DATA
-
-// Get performance report data from database
+// Database query functions (keep the ones you already have)
 async function getPerformanceReportData(filters, user) {
   const { startDate, endDate, faculty, course_id, class_id } = filters;
   
@@ -104,8 +265,7 @@ async function getPerformanceReportData(filters, user) {
       cl.class_name,
       u.name as lecturer_name,
       COALESCE(AVG(rt.rating_value), 0) as average_rating,
-      COUNT(rt.id) as rating_count,
-      COUNT(DISTINCT r.id) as total_reports
+      COUNT(rt.id) as rating_count
     FROM reports r
     JOIN courses c ON r.course_id = c.id
     JOIN classes cl ON r.class_id = cl.id
@@ -117,7 +277,6 @@ async function getPerformanceReportData(filters, user) {
   const params = [];
   let paramCount = 0;
 
-  // Apply filters
   if (startDate) {
     paramCount++;
     query += ` AND r.date_of_lecture >= $${paramCount}`;
@@ -148,7 +307,6 @@ async function getPerformanceReportData(filters, user) {
     params.push(class_id);
   }
 
-  // Apply user role-based filtering
   if (user.role === 'lecturer' || user.role === 'principal_lecturer') {
     paramCount++;
     query += ` AND r.lecturer_id = $${paramCount}`;
@@ -161,14 +319,13 @@ async function getPerformanceReportData(filters, user) {
 
   query += ` 
     GROUP BY r.id, c.course_name, cl.class_name, u.name
-    ORDER BY r.date_of_lecture DESC, r.week_number
+    ORDER BY r.date_of_lecture DESC
   `;
 
   const result = await pool.query(query, params);
   return result.rows;
 }
 
-// Get attendance report data from database
 async function getAttendanceReportData(filters, user) {
   const { startDate, endDate, faculty, course_id, class_id } = filters;
   
@@ -180,9 +337,7 @@ async function getAttendanceReportData(filters, user) {
       r.faculty,
       c.course_name,
       cl.class_name,
-      u.name as lecturer_name,
-      cl.total_students,
-      ROUND((r.students_present::decimal / cl.total_students::decimal) * 100, 2) as attendance_percentage
+      u.name as lecturer_name
     FROM reports r
     JOIN courses c ON r.course_id = c.id
     JOIN classes cl ON r.class_id = cl.id
@@ -193,7 +348,6 @@ async function getAttendanceReportData(filters, user) {
   const params = [];
   let paramCount = 0;
 
-  // Apply filters
   if (startDate) {
     paramCount++;
     query += ` AND r.date_of_lecture >= $${paramCount}`;
@@ -224,7 +378,6 @@ async function getAttendanceReportData(filters, user) {
     params.push(class_id);
   }
 
-  // Apply user role-based filtering
   if (user.role === 'lecturer' || user.role === 'principal_lecturer') {
     paramCount++;
     query += ` AND r.lecturer_id = $${paramCount}`;
@@ -241,7 +394,6 @@ async function getAttendanceReportData(filters, user) {
   return result.rows;
 }
 
-// Get faculty report data from database
 async function getFacultyReportData(filters, user) {
   const { startDate, endDate } = filters;
   
@@ -251,9 +403,7 @@ async function getFacultyReportData(filters, user) {
       COUNT(r.id) as total_reports,
       COUNT(CASE WHEN r.status = 'approved' THEN 1 END) as approved_reports,
       COUNT(CASE WHEN r.status LIKE 'pending%' THEN 1 END) as pending_reports,
-      ROUND(AVG(r.students_present), 2) as avg_attendance,
-      COUNT(DISTINCT r.lecturer_id) as total_lecturers,
-      COUNT(DISTINCT r.class_id) as total_classes
+      ROUND(AVG(r.students_present), 2) as avg_attendance
     FROM reports r
     WHERE 1=1
   `;
@@ -261,7 +411,6 @@ async function getFacultyReportData(filters, user) {
   const params = [];
   let paramCount = 0;
 
-  // Apply filters
   if (startDate) {
     paramCount++;
     query += ` AND r.date_of_lecture >= $${paramCount}`;
@@ -274,7 +423,6 @@ async function getFacultyReportData(filters, user) {
     params.push(endDate);
   }
 
-  // Apply user faculty filtering for PRL/PL
   if (user.faculty && ['prl', 'pl'].includes(user.role)) {
     paramCount++;
     query += ` AND r.faculty = $${paramCount}`;
@@ -290,44 +438,26 @@ async function getFacultyReportData(filters, user) {
   return result.rows;
 }
 
-// Get comprehensive report statistics
 async function getReportStatisticsData(userId) {
-  // Total reports
   const totalReports = await pool.query(
     'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1', 
     [userId]
   );
   
-  // Approved reports
   const approvedReports = await pool.query(
     'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1 AND status = $2', 
     [userId, 'approved']
   );
   
-  // Pending reports
   const pendingReports = await pool.query(
     'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1 AND status LIKE $2', 
     [userId, 'pending%']
   );
 
-  // Average attendance
-  const avgAttendance = await pool.query(
-    'SELECT ROUND(AVG(students_present), 2) as avg_attendance FROM reports WHERE lecturer_id = $1 AND status = $2',
-    [userId, 'approved']
-  );
-
-  // Recent reports (last 30 days)
-  const recentReports = await pool.query(
-    'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1 AND created_at >= NOW() - INTERVAL \'30 days\'',
-    [userId]
-  );
-
   return {
     total: parseInt(totalReports.rows[0].count),
     approved: parseInt(approvedReports.rows[0].count),
-    pending: parseInt(pendingReports.rows[0].count),
-    avg_attendance: parseFloat(avgAttendance.rows[0].avg_attendance) || 0,
-    recent: parseInt(recentReports.rows[0].count)
+    pending: parseInt(pendingReports.rows[0].count)
   };
 }
 
@@ -344,7 +474,7 @@ function convertPerformanceToCSV(performanceData) {
       report.week_number,
       report.date_of_lecture,
       report.students_present,
-      Math.round(report.average_rating * 100) / 100, // Round to 2 decimal places
+      Math.round(report.average_rating * 100) / 100,
       report.rating_count,
       `"${report.faculty}"`
     ];
@@ -355,7 +485,7 @@ function convertPerformanceToCSV(performanceData) {
 }
 
 function convertAttendanceToCSV(attendanceData) {
-  const headers = ['Week', 'Date', 'Course', 'Class', 'Lecturer', 'Students Present', 'Total Students', 'Attendance %', 'Faculty'];
+  const headers = ['Week', 'Date', 'Course', 'Class', 'Lecturer', 'Students Present', 'Faculty'];
   const csvRows = [headers.join(',')];
   
   for (const report of attendanceData) {
@@ -366,8 +496,6 @@ function convertAttendanceToCSV(attendanceData) {
       `"${report.class_name}"`,
       `"${report.lecturer_name}"`,
       report.students_present,
-      report.total_students || 'N/A',
-      report.attendance_percentage || '0',
       `"${report.faculty}"`
     ];
     csvRows.push(row.join(','));
@@ -377,7 +505,7 @@ function convertAttendanceToCSV(attendanceData) {
 }
 
 function convertFacultyToCSV(facultyData) {
-  const headers = ['Faculty', 'Total Reports', 'Approved Reports', 'Pending Reports', 'Average Attendance', 'Total Lecturers', 'Total Classes'];
+  const headers = ['Faculty', 'Total Reports', 'Approved Reports', 'Pending Reports', 'Average Attendance'];
   const csvRows = [headers.join(',')];
   
   for (const faculty of facultyData) {
@@ -386,9 +514,7 @@ function convertFacultyToCSV(facultyData) {
       faculty.total_reports,
       faculty.approved_reports,
       faculty.pending_reports,
-      faculty.avg_attendance || '0',
-      faculty.total_lecturers,
-      faculty.total_classes
+      faculty.avg_attendance || '0'
     ];
     csvRows.push(row.join(','));
   }
@@ -396,7 +522,6 @@ function convertFacultyToCSV(facultyData) {
   return csvRows.join('\n');
 }
 
-// Keep your existing helper functions
 function convertToCSV(reports) {
   const headers = ['Course', 'Week', 'Date', 'Students Present', 'Topic', 'Status', 'Signed At'];
   const csvRows = [headers.join(',')];
