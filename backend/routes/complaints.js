@@ -4,16 +4,17 @@ const complaintController = require('../controllers/complaintController');
 
 const router = express.Router();
 
+// ✅ Every user can create a complaint
 router.post('/', auth, complaintController.createComplaint);
+
+// ✅ Complaint routes for individual users
 router.get('/my-complaints', auth, complaintController.getMyComplaints);
 router.get('/for-me', auth, complaintController.getComplaintsForMe);
-router.get('/all', auth, complaintController.getAllComplaints);
-router.patch('/:id/respond', auth, complaintController.respondToComplaint);
-router.patch('/:id/status', auth, complaintController.updateComplaintStatus);
-router.get('/download/my-complaints', auth, complaintController.downloadMyComplaints);
 
-// ADD THESE MISSING COMPLAINT ENDPOINTS
-router.post('/generate-report', auth, complaintController.generateComplaintReport);
-router.get('/statistics', auth, complaintController.getComplaintStatistics);
+// ✅ Admin roles can see all complaints
+router.get('/all', auth, complaintController.getAllComplaints);
+
+// ✅ Respond or update
+router.patch('/:id/respond', auth, complaintController.respondToComplaint);
 
 module.exports = router;

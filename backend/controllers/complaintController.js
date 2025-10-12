@@ -1,63 +1,38 @@
 const pool = require('../config/database');
 
 const complaintController = {
+  // ✅ Allow ANY user to create a complaint
   createComplaint: async (req, res) => {
     try {
       const { title, description, complaint_against_id, complaint_type, priority } = req.body;
 
-      // Enhanced validation
       if (!title || !description || !complaint_against_id) {
         return res.status(400).json({ 
-          message: 'Title, description, and complaint target are required',
-          details: {
-            title: !title ? 'Title is required' : null,
-            description: !description ? 'Description is required' : null,
-            complaint_against_id: !complaint_against_id ? 'Complaint target is required' : null
-          }
+          message: 'Title, description, and complaint target are required'
         });
       }
 
-      // Check if user is complaining against themselves
       if (parseInt(complaint_against_id) === req.user.id) {
         return res.status(400).json({ message: 'You cannot file a complaint against yourself' });
       }
 
-      // Check if target user exists
-      const targetUser = await pool.query('SELECT role, name FROM users WHERE id = $1', [complaint_against_id]);
-      if (!targetUser.rows[0]) {
+      // Ensure the target user exists
+      const targetUser = await pool.query('SELECT id, role, name FROM users WHERE id = $1', [complaint_against_id]);
+      if (!targetUser.rows.length) {
         return res.status(404).json({ message: 'Target user not found' });
       }
 
-      const complaintData = {
-        title: title.trim(),
-        description: description.trim(),
-        complainant_id: req.user.id,
-        complaint_against_id,
-        complaint_type: complaint_type || determineComplaintType(req.user.role, targetUser.rows[0].role),
-        priority: priority || 'medium',
-        status: 'pending'
-      };
+      const complaintType = complaint_type || 'student_lecturer';
 
-      // Insert complaint
       const result = await pool.query(`
-        INSERT INTO complaints (title, description, complainant_id, complaint_against_id, complaint_type, priority, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO complaints (title, description, complainant_id, complaint_against_id, complaint_type, status)
+        VALUES ($1, $2, $3, $4, $5, 'pending')
         RETURNING *
-      `, [
-        complaintData.title,
-        complaintData.description,
-        complaintData.complainant_id,
-        complaintData.complaint_against_id,
-        complaintData.complaint_type,
-        complaintData.priority,
-        complaintData.status
-      ]);
+      `, [title.trim(), description.trim(), req.user.id, complaint_against_id, complaintType]);
 
-      const complaint = result.rows[0];
-      
-      res.status(201).json({ 
-        message: 'Complaint filed successfully. You will receive feedback soon.', 
-        complaint 
+      res.status(201).json({
+        message: 'Complaint filed successfully.',
+        complaint: result.rows[0]
       });
     } catch (error) {
       console.error('Error creating complaint:', error);
@@ -65,19 +40,17 @@ const complaintController = {
     }
   },
 
+  // ✅ Fetch all complaints created by this user
   getMyComplaints: async (req, res) => {
     try {
       const result = await pool.query(`
-        SELECT 
-          c.*,
-          u.name as complaint_against_name,
-          u.role as complaint_against_role
+        SELECT c.*, u.name AS complaint_against_name, u.role AS complaint_against_role
         FROM complaints c
         LEFT JOIN users u ON c.complaint_against_id = u.id
         WHERE c.complainant_id = $1
         ORDER BY c.created_at DESC
       `, [req.user.id]);
-      
+
       res.json(result.rows);
     } catch (error) {
       console.error('Error fetching complaints:', error);
@@ -85,46 +58,42 @@ const complaintController = {
     }
   },
 
+  // ✅ Fetch complaints made *against* this user
   getComplaintsForMe: async (req, res) => {
     try {
       const result = await pool.query(`
-        SELECT 
-          c.*,
-          u.name as complainant_name,
-          u.role as complainant_role
+        SELECT c.*, u.name AS complainant_name, u.role AS complainant_role
         FROM complaints c
         LEFT JOIN users u ON c.complainant_id = u.id
         WHERE c.complaint_against_id = $1
         ORDER BY c.created_at DESC
       `, [req.user.id]);
-      
+
       res.json(result.rows);
     } catch (error) {
-      console.error('Error fetching complaints for response:', error);
+      console.error('Error fetching complaints for me:', error);
       res.status(500).json({ message: 'Server error', error: error.message });
     }
   },
 
+  // ✅ Only PL, PRL, FMG can see all complaints
   getAllComplaints: async (req, res) => {
     try {
-      // Only allow PL, PRL, and FMG to see all complaints
       if (!['pl', 'prl', 'fmg'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
       const result = await pool.query(`
         SELECT 
-          c.*,
-          comp.name as complainant_name,
-          comp.role as complainant_role,
-          against.name as complaint_against_name,
-          against.role as complaint_against_role
+          c.*, 
+          comp.name AS complainant_name,
+          against.name AS complaint_against_name
         FROM complaints c
         LEFT JOIN users comp ON c.complainant_id = comp.id
         LEFT JOIN users against ON c.complaint_against_id = against.id
         ORDER BY c.created_at DESC
       `);
-      
+
       res.json(result.rows);
     } catch (error) {
       console.error('Error fetching all complaints:', error);
@@ -132,368 +101,41 @@ const complaintController = {
     }
   },
 
+  // ✅ Respond to a complaint (only if you’re involved or have higher role)
   respondToComplaint: async (req, res) => {
     try {
       const { id } = req.params;
       const { response } = req.body;
 
-      if (!response || !response.trim()) {
-        return res.status(400).json({ message: 'Response is required' });
+      if (!response?.trim()) {
+        return res.status(400).json({ message: 'Response text is required' });
       }
 
-      // Check if complaint exists and user is authorized to respond
-      const complaintCheck = await pool.query(`
-        SELECT * FROM complaints WHERE id = $1
-      `, [id]);
-
-      if (complaintCheck.rows.length === 0) {
+      const complaintCheck = await pool.query('SELECT * FROM complaints WHERE id = $1', [id]);
+      if (!complaintCheck.rows.length) {
         return res.status(404).json({ message: 'Complaint not found' });
       }
 
       const complaint = complaintCheck.rows[0];
-      
-      // Check if user is the one being complained against or has admin rights
+
+      // Only target or PL/PRL/FMG can respond
       if (complaint.complaint_against_id !== req.user.id && !['pl', 'prl', 'fmg'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Not authorized to respond to this complaint' });
       }
 
       const result = await pool.query(`
-        UPDATE complaints 
+        UPDATE complaints
         SET response = $1, responded_by = $2, responded_at = CURRENT_TIMESTAMP, status = 'resolved'
         WHERE id = $3
         RETURNING *
       `, [response.trim(), req.user.id, id]);
 
-      const updatedComplaint = result.rows[0];
-      
-      res.json({ 
-        message: 'Response submitted successfully.', 
-        complaint: updatedComplaint 
-      });
+      res.json({ message: 'Response submitted successfully.', complaint: result.rows[0] });
     } catch (error) {
       console.error('Error responding to complaint:', error);
       res.status(500).json({ message: 'Server error', error: error.message });
     }
   },
-
-  updateComplaintStatus: async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-
-      if (!status) {
-        return res.status(400).json({ message: 'Status is required' });
-      }
-
-      // Only allow PL, PRL, FMG to update status
-      if (!['pl', 'prl', 'fmg'].includes(req.user.role)) {
-        return res.status(403).json({ message: 'Not authorized to update complaint status' });
-      }
-
-      const result = await pool.query(`
-        UPDATE complaints 
-        SET status = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-        RETURNING *
-      `, [status, id]);
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Complaint not found' });
-      }
-
-      res.json({ 
-        message: 'Complaint status updated successfully', 
-        complaint: result.rows[0] 
-      });
-    } catch (error) {
-      console.error('Error updating complaint status:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  },
-
-  downloadMyComplaints: async (req, res) => {
-    try {
-      const result = await pool.query(`
-        SELECT 
-          c.*,
-          u.name as complaint_against_name
-        FROM complaints c
-        LEFT JOIN users u ON c.complaint_against_id = u.id
-        WHERE c.complainant_id = $1
-        ORDER BY c.created_at DESC
-      `, [req.user.id]);
-      
-      const complaints = result.rows;
-      const csvData = convertComplaintsToCSV(complaints);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=my-complaints.csv');
-      res.send(csvData);
-    } catch (error) {
-      console.error('Error downloading complaints:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  },
-
-  // FIXED: Generate complaint report with real data and proper filtering
-  generateComplaintReport: async (req, res) => {
-    try {
-      const { startDate, endDate, status, priority, complaint_type } = req.body;
-
-      // Query real complaint data from database with proper filtering
-      const complaintData = await getComplaintReportData(req.body, req.user);
-      const csvData = convertComplaintsToReportCSV(complaintData);
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=complaints-report-${new Date().toISOString().split('T')[0]}.csv`);
-      res.send(csvData);
-    } catch (error) {
-      console.error('Error generating complaint report:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  },
-
-  // FIXED: Get complaint statistics with real data and user-based filtering
-  getComplaintStatistics: async (req, res) => {
-    try {
-      // Query real statistics from database with user-based filtering
-      const statistics = await getComplaintStatisticsData(req.user);
-      res.json(statistics);
-    } catch (error) {
-      console.error('Error fetching complaint statistics:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  }
 };
-
-// REAL DATABASE QUERIES FOR COMPLAINT REPORTS - NO HARDCODED DATA
-
-// Get complaint report data from database with proper filtering
-async function getComplaintReportData(filters, user) {
-  const { startDate, endDate, status, priority, complaint_type } = filters;
-  
-  let query = `
-    SELECT 
-      c.*,
-      comp.name as complainant_name,
-      comp.role as complainant_role,
-      comp.faculty as complainant_faculty,
-      against.name as complaint_against_name,
-      against.role as complaint_against_role,
-      against.faculty as complaint_against_faculty,
-      responder.name as responder_name
-    FROM complaints c
-    LEFT JOIN users comp ON c.complainant_id = comp.id
-    LEFT JOIN users against ON c.complaint_against_id = against.id
-    LEFT JOIN users responder ON c.responded_by = responder.id
-    WHERE 1=1
-  `;
-  
-  const params = [];
-  let paramCount = 0;
-
-  // Apply filters
-  if (startDate) {
-    paramCount++;
-    query += ` AND c.created_at >= $${paramCount}`;
-    params.push(startDate);
-  }
-
-  if (endDate) {
-    paramCount++;
-    query += ` AND c.created_at <= $${paramCount}`;
-    params.push(endDate);
-  }
-
-  if (status) {
-    paramCount++;
-    query += ` AND c.status = $${paramCount}`;
-    params.push(status);
-  }
-
-  if (priority) {
-    paramCount++;
-    query += ` AND c.priority = $${paramCount}`;
-    params.push(priority);
-  }
-
-  if (complaint_type) {
-    paramCount++;
-    query += ` AND c.complaint_type = $${paramCount}`;
-    params.push(complaint_type);
-  }
-
-  // Apply user-based filtering
-  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
-    paramCount++;
-    query += ` AND (c.complainant_id = $${paramCount} OR c.complaint_against_id = $${paramCount})`;
-    params.push(user.id);
-  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
-    paramCount++;
-    query += ` AND (comp.faculty = $${paramCount} OR against.faculty = $${paramCount})`;
-    params.push(user.faculty);
-  }
-
-  query += ' ORDER BY c.created_at DESC';
-
-  const result = await pool.query(query, params);
-  return result.rows;
-}
-
-// Get complaint statistics from database with user-based filtering
-async function getComplaintStatisticsData(user) {
-  let query = `
-    SELECT 
-      c.status,
-      c.priority,
-      c.complaint_type,
-      COUNT(*) as count
-    FROM complaints c
-    LEFT JOIN users comp ON c.complainant_id = comp.id
-    LEFT JOIN users against ON c.complaint_against_id = against.id
-    WHERE 1=1
-  `;
-  
-  const params = [];
-
-  // Apply user-based filtering
-  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
-    query += ` AND (c.complainant_id = $1 OR c.complaint_against_id = $1)`;
-    params.push(user.id);
-  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
-    query += ` AND (comp.faculty = $1 OR against.faculty = $1)`;
-    params.push(user.faculty);
-  }
-
-  query += ` 
-    GROUP BY c.status, c.priority, c.complaint_type
-    ORDER BY c.status, c.priority
-  `;
-
-  const result = await pool.query(query, params);
-
-  // Get totals with the same filtering
-  const totalQuery = `
-    SELECT 
-      COUNT(*) as total,
-      COUNT(CASE WHEN c.status = 'pending' THEN 1 END) as pending,
-      COUNT(CASE WHEN c.status = 'resolved' THEN 1 END) as resolved,
-      COUNT(CASE WHEN c.status = 'in_progress' THEN 1 END) as in_progress,
-      COUNT(CASE WHEN c.priority IN ('high', 'urgent') THEN 1 END) as high_priority
-    FROM complaints c
-    LEFT JOIN users comp ON c.complainant_id = comp.id
-    LEFT JOIN users against ON c.complaint_against_id = against.id
-    WHERE 1=1
-  `;
-
-  const totalParams = [];
-  let totalParamCount = 0;
-
-  // Apply the same user-based filtering to totals
-  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
-    totalParamCount++;
-    totalQuery += ` AND (c.complainant_id = $${totalParamCount} OR c.complaint_against_id = $${totalParamCount})`;
-    totalParams.push(user.id);
-  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
-    totalParamCount++;
-    totalQuery += ` AND (comp.faculty = $${totalParamCount} OR against.faculty = $${totalParamCount})`;
-    totalParams.push(user.faculty);
-  }
-
-  const totalResult = await pool.query(totalQuery, totalParams);
-
-  return {
-    total: parseInt(totalResult.rows[0].total),
-    pending: parseInt(totalResult.rows[0].pending),
-    resolved: parseInt(totalResult.rows[0].resolved),
-    in_progress: parseInt(totalResult.rows[0].in_progress),
-    high_priority: parseInt(totalResult.rows[0].high_priority),
-    breakdown: result.rows
-  };
-}
-
-// Convert complaints to CSV for detailed report
-function convertComplaintsToReportCSV(complaints) {
-  const headers = [
-    'Title', 
-    'Complainant', 
-    'Complainant Role', 
-    'Complainant Faculty', 
-    'Against', 
-    'Against Role', 
-    'Against Faculty', 
-    'Type', 
-    'Priority', 
-    'Status', 
-    'Date Filed', 
-    'Response', 
-    'Responder', 
-    'Response Date'
-  ];
-  
-  const csvRows = [headers.join(',')];
-  
-  for (const complaint of complaints) {
-    const row = [
-      `"${complaint.title.replace(/"/g, '""')}"`,
-      `"${complaint.complainant_name}"`,
-      `"${complaint.complainant_role}"`,
-      `"${complaint.complainant_faculty}"`,
-      `"${complaint.complaint_against_name}"`,
-      `"${complaint.complaint_against_role}"`,
-      `"${complaint.complaint_against_faculty}"`,
-      `"${complaint.complaint_type}"`,
-      `"${complaint.priority}"`,
-      `"${complaint.status}"`,
-      new Date(complaint.created_at).toLocaleDateString(),
-      complaint.response ? `"${complaint.response.replace(/"/g, '""')}"` : 'No response',
-      complaint.responder_name || 'Not responded',
-      complaint.responded_at ? new Date(complaint.responded_at).toLocaleDateString() : 'Not responded'
-    ];
-    csvRows.push(row.join(','));
-  }
-  
-  return csvRows.join('\n');
-}
-
-// Helper function to determine complaint type based on roles
-function determineComplaintType(complainantRole, targetRole) {
-  const complaintTypes = {
-    'student_lecturer': ['student', 'lecturer'],
-    'lecturer_prl': ['lecturer', 'prl'],
-    'prl_pl': ['prl', 'pl'],
-    'pl_fmg': ['pl', 'fmg']
-  };
-
-  for (const [type, roles] of Object.entries(complaintTypes)) {
-    if (roles.includes(complainantRole) && roles.includes(targetRole)) {
-      return type;
-    }
-  }
-
-  return 'student_lecturer'; // default
-}
-
-// Helper function to convert complaints to CSV (for basic download)
-function convertComplaintsToCSV(complaints) {
-  const headers = ['Title', 'Against', 'Type', 'Priority', 'Status', 'Date Filed', 'Response', 'Response Date'];
-  const csvRows = [headers.join(',')];
-  
-  for (const complaint of complaints) {
-    const row = [
-      `"${complaint.title.replace(/"/g, '""')}"`,
-      complaint.complaint_against_name,
-      complaint.complaint_type,
-      complaint.priority,
-      complaint.status,
-      new Date(complaint.created_at).toLocaleDateString(),
-      complaint.response ? `"${complaint.response.replace(/"/g, '""')}"` : 'No response yet',
-      complaint.responded_at ? new Date(complaint.responded_at).toLocaleDateString() : 'Not responded'
-    ];
-    csvRows.push(row.join(','));
-  }
-  
-  return csvRows.join('\n');
-}
 
 module.exports = complaintController;

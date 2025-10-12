@@ -31,7 +31,7 @@ exports.getClasses = async (req, res) => {
 // ================================
 exports.getLecturers = async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, full_name, email FROM users WHERE role = $1', ['lecturer']);
+    const result = await pool.query('SELECT id, name AS full_name, email FROM users WHERE role = $1', ['lecturer']);
     res.status(200).json(result.rows);
   } catch (error) {
     console.error('Error fetching lecturers:', error);
@@ -44,25 +44,27 @@ exports.getLecturers = async (req, res) => {
 // ================================
 exports.assignCourse = async (req, res) => {
   try {
-    const { course_id, lecturer_id, class_id, semester } = req.body;
+    const { course_id, lecturer_id, class_id } = req.body;
+    const assigned_by = req.user.id;
 
-    if (!course_id || !lecturer_id || !class_id || !semester) {
-      return res.status(400).json({ message: 'All fields are required' });
+    if (!course_id || !lecturer_id || !class_id) {
+      return res.status(400).json({ message: 'course_id, lecturer_id, and class_id are required' });
     }
 
     const insertQuery = `
-      INSERT INTO assignments (course_id, lecturer_id, class_id, semester)
-      VALUES ($1, $2, $3, $4) RETURNING *;
+      INSERT INTO course_assignments (course_id, lecturer_id, class_id, assigned_by)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *;
     `;
-    const result = await pool.query(insertQuery, [course_id, lecturer_id, class_id, semester]);
+    const result = await pool.query(insertQuery, [course_id, lecturer_id, class_id, assigned_by]);
 
     res.status(201).json({
-      message: 'Course successfully assigned',
+      message: 'Lecturer successfully assigned to class',
       assignment: result.rows[0],
     });
   } catch (error) {
-    console.error('Error assigning course:', error);
-    res.status(500).json({ message: 'Failed to assign course' });
+    console.error('Error assigning lecturer:', error);
+    res.status(500).json({ message: 'Failed to assign lecturer to class' });
   }
 };
 
@@ -74,11 +76,12 @@ exports.getMyAssignments = async (req, res) => {
     const lecturerId = req.user.id;
 
     const result = await pool.query(
-      `SELECT a.id, c.course_name, cl.class_name, a.semester
-       FROM assignments a
+      `SELECT a.id, c.course_name, cl.class_name, a.assigned_at
+       FROM course_assignments a
        JOIN courses c ON a.course_id = c.id
        JOIN classes cl ON a.class_id = cl.id
-       WHERE a.lecturer_id = $1`,
+       WHERE a.lecturer_id = $1
+       ORDER BY a.assigned_at DESC`,
       [lecturerId]
     );
 
@@ -90,13 +93,18 @@ exports.getMyAssignments = async (req, res) => {
 };
 
 // ================================
-// 🔹 GET ALL ASSIGNMENTS (for Admin)
+// 🔹 GET ALL ASSIGNMENTS (for Admin / PL / FMG)
 // ================================
 exports.getAllAssignments = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT a.id, c.course_name, cl.class_name, u.full_name AS lecturer, a.semester
-      FROM assignments a
+      SELECT 
+        a.id, 
+        c.course_name, 
+        cl.class_name, 
+        u.name AS lecturer, 
+        a.assigned_at
+      FROM course_assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN classes cl ON a.class_id = cl.id
       JOIN users u ON a.lecturer_id = u.id
@@ -115,7 +123,7 @@ exports.getAllAssignments = async (req, res) => {
 exports.deleteAssignment = async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM assignments WHERE id = $1', [id]);
+    await pool.query('DELETE FROM course_assignments WHERE id = $1', [id]);
     res.status(200).json({ message: 'Assignment deleted successfully' });
   } catch (error) {
     console.error('Error deleting assignment:', error);
@@ -129,17 +137,21 @@ exports.deleteAssignment = async (req, res) => {
 exports.downloadAssignments = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT c.course_name, cl.class_name, u.full_name AS lecturer, a.semester
-      FROM assignments a
+      SELECT 
+        c.course_name, 
+        cl.class_name, 
+        u.name AS lecturer, 
+        a.assigned_at
+      FROM course_assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN classes cl ON a.class_id = cl.id
       JOIN users u ON a.lecturer_id = u.id
     `);
 
     // Convert to CSV
-    const header = 'Course,Class,Lecturer,Semester\n';
+    const header = 'Course,Class,Lecturer,Assigned At\n';
     const rows = result.rows
-      .map(r => `${r.course_name},${r.class_name},${r.lecturer},${r.semester}`)
+      .map(r => `${r.course_name},${r.class_name},${r.lecturer},${r.assigned_at}`)
       .join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
@@ -161,16 +173,16 @@ exports.generateAssignmentReport = async (req, res) => {
 
     if (type === 'lecturer') {
       query = `
-        SELECT u.full_name AS lecturer, COUNT(a.id) AS total_assigned
-        FROM assignments a
+        SELECT u.name AS lecturer, COUNT(a.id) AS total_assigned
+        FROM course_assignments a
         JOIN users u ON a.lecturer_id = u.id
-        GROUP BY u.full_name
+        GROUP BY u.name
         ORDER BY total_assigned DESC;
       `;
     } else if (type === 'class') {
       query = `
         SELECT cl.class_name, COUNT(a.id) AS total_assigned
-        FROM assignments a
+        FROM course_assignments a
         JOIN classes cl ON a.class_id = cl.id
         GROUP BY cl.class_name
         ORDER BY total_assigned DESC;
@@ -178,7 +190,7 @@ exports.generateAssignmentReport = async (req, res) => {
     } else if (type === 'course') {
       query = `
         SELECT c.course_name, COUNT(a.id) AS total_assigned
-        FROM assignments a
+        FROM course_assignments a
         JOIN courses c ON a.course_id = c.id
         GROUP BY c.course_name
         ORDER BY total_assigned DESC;
@@ -200,7 +212,7 @@ exports.generateAssignmentReport = async (req, res) => {
 // ================================
 exports.getAssignmentStatistics = async (req, res) => {
   try {
-    const totalAssignments = await pool.query('SELECT COUNT(*) FROM assignments');
+    const totalAssignments = await pool.query('SELECT COUNT(*) FROM course_assignments');
     const totalLecturers = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'lecturer'");
     const totalCourses = await pool.query('SELECT COUNT(*) FROM courses');
     const totalClasses = await pool.query('SELECT COUNT(*) FROM classes');
