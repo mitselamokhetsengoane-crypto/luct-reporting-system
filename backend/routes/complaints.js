@@ -14,7 +14,16 @@ router.get('/for-me', auth, complaintController.getComplaintsForMe);
 // ✅ Admin roles can see all complaints
 router.get('/all', auth, complaintController.getAllComplaints);
 
-// ✅ Respond or update
+// ✅ Get specific complaint by ID
+router.get('/:id', auth, complaintController.getComplaintById);
+
+// ✅ Respond or update complaint
 router.patch('/:id/respond', auth, complaintController.respondToComplaint);
+
+// ✅ Update complaint status (admin only)
+router.patch('/:id/status', auth, complaintController.updateComplaintStatus);
+
+// ✅ Add feedback to complaint
+router.post('/:id/feedback', auth, complaintController.addFeedback);
 
 module.exports = router;
