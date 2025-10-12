@@ -235,54 +235,14 @@ const complaintController = {
     }
   },
 
-  // NEW: Generate complaint report
+  // FIXED: Generate complaint report with real data and proper filtering
   generateComplaintReport: async (req, res) => {
     try {
-      const { report_type, startDate, endDate, status, priority } = req.body;
+      const { startDate, endDate, status, priority, complaint_type } = req.body;
 
-      let query = `
-        SELECT 
-          c.*,
-          comp.name as complainant_name,
-          against.name as complaint_against_name
-        FROM complaints c
-        LEFT JOIN users comp ON c.complainant_id = comp.id
-        LEFT JOIN users against ON c.complaint_against_id = against.id
-        WHERE 1=1
-      `;
-      const params = [];
-      let paramCount = 0;
-
-      if (startDate) {
-        paramCount++;
-        query += ` AND c.created_at >= $${paramCount}`;
-        params.push(startDate);
-      }
-
-      if (endDate) {
-        paramCount++;
-        query += ` AND c.created_at <= $${paramCount}`;
-        params.push(endDate);
-      }
-
-      if (status) {
-        paramCount++;
-        query += ` AND c.status = $${paramCount}`;
-        params.push(status);
-      }
-
-      if (priority) {
-        paramCount++;
-        query += ` AND c.priority = $${paramCount}`;
-        params.push(priority);
-      }
-
-      query += ' ORDER BY c.created_at DESC';
-
-      const result = await pool.query(query, params);
-      const complaints = result.rows;
-
-      const csvData = convertComplaintsToCSV(complaints);
+      // Query real complaint data from database with proper filtering
+      const complaintData = await getComplaintReportData(req.body, req.user);
+      const csvData = convertComplaintsToReportCSV(complaintData);
       
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=complaints-report-${new Date().toISOString().split('T')[0]}.csv`);
@@ -293,36 +253,208 @@ const complaintController = {
     }
   },
 
-  // NEW: Get complaint statistics
+  // FIXED: Get complaint statistics with real data and user-based filtering
   getComplaintStatistics: async (req, res) => {
     try {
-      const result = await pool.query(`
-        SELECT 
-          status,
-          priority,
-          COUNT(*) as count,
-          COUNT(*) * 100.0 / (SELECT COUNT(*) FROM complaints) as percentage
-        FROM complaints 
-        GROUP BY status, priority
-        ORDER BY status, priority
-      `);
-
-      const total = await pool.query('SELECT COUNT(*) as total FROM complaints');
-      const pending = await pool.query('SELECT COUNT(*) as pending FROM complaints WHERE status = $1', ['pending']);
-      const resolved = await pool.query('SELECT COUNT(*) as resolved FROM complaints WHERE status = $1', ['resolved']);
-
-      res.json({
-        total: parseInt(total.rows[0].total),
-        pending: parseInt(pending.rows[0].pending),
-        resolved: parseInt(resolved.rows[0].resolved),
-        breakdown: result.rows
-      });
+      // Query real statistics from database with user-based filtering
+      const statistics = await getComplaintStatisticsData(req.user);
+      res.json(statistics);
     } catch (error) {
       console.error('Error fetching complaint statistics:', error);
       res.status(500).json({ message: 'Server error', error: error.message });
     }
   }
 };
+
+// REAL DATABASE QUERIES FOR COMPLAINT REPORTS - NO HARDCODED DATA
+
+// Get complaint report data from database with proper filtering
+async function getComplaintReportData(filters, user) {
+  const { startDate, endDate, status, priority, complaint_type } = filters;
+  
+  let query = `
+    SELECT 
+      c.*,
+      comp.name as complainant_name,
+      comp.role as complainant_role,
+      comp.faculty as complainant_faculty,
+      against.name as complaint_against_name,
+      against.role as complaint_against_role,
+      against.faculty as complaint_against_faculty,
+      responder.name as responder_name
+    FROM complaints c
+    LEFT JOIN users comp ON c.complainant_id = comp.id
+    LEFT JOIN users against ON c.complaint_against_id = against.id
+    LEFT JOIN users responder ON c.responded_by = responder.id
+    WHERE 1=1
+  `;
+  
+  const params = [];
+  let paramCount = 0;
+
+  // Apply filters
+  if (startDate) {
+    paramCount++;
+    query += ` AND c.created_at >= $${paramCount}`;
+    params.push(startDate);
+  }
+
+  if (endDate) {
+    paramCount++;
+    query += ` AND c.created_at <= $${paramCount}`;
+    params.push(endDate);
+  }
+
+  if (status) {
+    paramCount++;
+    query += ` AND c.status = $${paramCount}`;
+    params.push(status);
+  }
+
+  if (priority) {
+    paramCount++;
+    query += ` AND c.priority = $${paramCount}`;
+    params.push(priority);
+  }
+
+  if (complaint_type) {
+    paramCount++;
+    query += ` AND c.complaint_type = $${paramCount}`;
+    params.push(complaint_type);
+  }
+
+  // Apply user-based filtering
+  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
+    paramCount++;
+    query += ` AND (c.complainant_id = $${paramCount} OR c.complaint_against_id = $${paramCount})`;
+    params.push(user.id);
+  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
+    paramCount++;
+    query += ` AND (comp.faculty = $${paramCount} OR against.faculty = $${paramCount})`;
+    params.push(user.faculty);
+  }
+
+  query += ' ORDER BY c.created_at DESC';
+
+  const result = await pool.query(query, params);
+  return result.rows;
+}
+
+// Get complaint statistics from database with user-based filtering
+async function getComplaintStatisticsData(user) {
+  let query = `
+    SELECT 
+      c.status,
+      c.priority,
+      c.complaint_type,
+      COUNT(*) as count
+    FROM complaints c
+    LEFT JOIN users comp ON c.complainant_id = comp.id
+    LEFT JOIN users against ON c.complaint_against_id = against.id
+    WHERE 1=1
+  `;
+  
+  const params = [];
+
+  // Apply user-based filtering
+  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
+    query += ` AND (c.complainant_id = $1 OR c.complaint_against_id = $1)`;
+    params.push(user.id);
+  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
+    query += ` AND (comp.faculty = $1 OR against.faculty = $1)`;
+    params.push(user.faculty);
+  }
+
+  query += ` 
+    GROUP BY c.status, c.priority, c.complaint_type
+    ORDER BY c.status, c.priority
+  `;
+
+  const result = await pool.query(query, params);
+
+  // Get totals with the same filtering
+  const totalQuery = `
+    SELECT 
+      COUNT(*) as total,
+      COUNT(CASE WHEN c.status = 'pending' THEN 1 END) as pending,
+      COUNT(CASE WHEN c.status = 'resolved' THEN 1 END) as resolved,
+      COUNT(CASE WHEN c.status = 'in_progress' THEN 1 END) as in_progress,
+      COUNT(CASE WHEN c.priority IN ('high', 'urgent') THEN 1 END) as high_priority
+    FROM complaints c
+    LEFT JOIN users comp ON c.complainant_id = comp.id
+    LEFT JOIN users against ON c.complaint_against_id = against.id
+    WHERE 1=1
+  `;
+
+  const totalParams = [];
+  let totalParamCount = 0;
+
+  // Apply the same user-based filtering to totals
+  if (user.role === 'student' || user.role === 'lecturer' || user.role === 'principal_lecturer') {
+    totalParamCount++;
+    totalQuery += ` AND (c.complainant_id = $${totalParamCount} OR c.complaint_against_id = $${totalParamCount})`;
+    totalParams.push(user.id);
+  } else if (user.faculty && ['prl', 'pl'].includes(user.role)) {
+    totalParamCount++;
+    totalQuery += ` AND (comp.faculty = $${totalParamCount} OR against.faculty = $${totalParamCount})`;
+    totalParams.push(user.faculty);
+  }
+
+  const totalResult = await pool.query(totalQuery, totalParams);
+
+  return {
+    total: parseInt(totalResult.rows[0].total),
+    pending: parseInt(totalResult.rows[0].pending),
+    resolved: parseInt(totalResult.rows[0].resolved),
+    in_progress: parseInt(totalResult.rows[0].in_progress),
+    high_priority: parseInt(totalResult.rows[0].high_priority),
+    breakdown: result.rows
+  };
+}
+
+// Convert complaints to CSV for detailed report
+function convertComplaintsToReportCSV(complaints) {
+  const headers = [
+    'Title', 
+    'Complainant', 
+    'Complainant Role', 
+    'Complainant Faculty', 
+    'Against', 
+    'Against Role', 
+    'Against Faculty', 
+    'Type', 
+    'Priority', 
+    'Status', 
+    'Date Filed', 
+    'Response', 
+    'Responder', 
+    'Response Date'
+  ];
+  
+  const csvRows = [headers.join(',')];
+  
+  for (const complaint of complaints) {
+    const row = [
+      `"${complaint.title.replace(/"/g, '""')}"`,
+      `"${complaint.complainant_name}"`,
+      `"${complaint.complainant_role}"`,
+      `"${complaint.complainant_faculty}"`,
+      `"${complaint.complaint_against_name}"`,
+      `"${complaint.complaint_against_role}"`,
+      `"${complaint.complaint_against_faculty}"`,
+      `"${complaint.complaint_type}"`,
+      `"${complaint.priority}"`,
+      `"${complaint.status}"`,
+      new Date(complaint.created_at).toLocaleDateString(),
+      complaint.response ? `"${complaint.response.replace(/"/g, '""')}"` : 'No response',
+      complaint.responder_name || 'Not responded',
+      complaint.responded_at ? new Date(complaint.responded_at).toLocaleDateString() : 'Not responded'
+    ];
+    csvRows.push(row.join(','));
+  }
+  
+  return csvRows.join('\n');
+}
 
 // Helper function to determine complaint type based on roles
 function determineComplaintType(complainantRole, targetRole) {
@@ -342,7 +474,7 @@ function determineComplaintType(complainantRole, targetRole) {
   return 'student_lecturer'; // default
 }
 
-// Helper function to convert complaints to CSV
+// Helper function to convert complaints to CSV (for basic download)
 function convertComplaintsToCSV(complaints) {
   const headers = ['Title', 'Against', 'Type', 'Priority', 'Status', 'Date Filed', 'Response', 'Response Date'];
   const csvRows = [headers.join(',')];
