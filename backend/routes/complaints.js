@@ -14,6 +14,9 @@ router.get('/for-me', auth, complaintController.getComplaintsForMe);
 // ✅ Admin roles can see all complaints
 router.get('/all', auth, complaintController.getAllComplaints);
 
+// ✅ Get available users for complaints
+router.get('/available-users', auth, complaintController.getAvailableUsers);
+
 // ✅ Get specific complaint by ID
 router.get('/:id', auth, complaintController.getComplaintById);
 

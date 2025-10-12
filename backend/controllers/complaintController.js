@@ -1,6 +1,42 @@
 const pool = require('../config/database');
 
 const complaintController = {
+  // ✅ NEW: Get available users for complaints
+  getAvailableUsers: async (req, res) => {
+    try {
+      console.log('Fetching available users for complaints for user:', req.user.id, 'Role:', req.user.role);
+      
+      // Get all active users except the current user
+      const result = await pool.query(`
+        SELECT id, name, role, faculty, email
+        FROM users 
+        WHERE id != $1 
+        AND status = 'active'
+        ORDER BY 
+          CASE 
+            WHEN role = 'fmg' THEN 1
+            WHEN role = 'pl' THEN 2
+            WHEN role = 'prl' THEN 3
+            WHEN role = 'principal_lecturer' THEN 4
+            WHEN role = 'lecturer' THEN 5
+            WHEN role = 'student' THEN 6
+            ELSE 7
+          END,
+          name ASC
+      `, [req.user.id]);
+
+      console.log(`Found ${result.rows.length} users available for complaints`);
+      
+      res.json(result.rows);
+    } catch (error) {
+      console.error('Error fetching available users:', error);
+      res.status(500).json({ 
+        message: 'Server error while fetching users', 
+        error: error.message 
+      });
+    }
+  },
+
   // ✅ Allow ANY user to create a complaint with enhanced validation
   createComplaint: async (req, res) => {
     try {

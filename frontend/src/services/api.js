@@ -97,6 +97,11 @@ export const authAPI = {
     console.log('Fetching classes');
     return API.get('/auth/classes');
   },
+  // ADDED: Get all users for complaints
+  getAvailableUsers: () => {
+    console.log('Fetching available users for complaints');
+    return API.get('/auth/users');
+  }
 };
 
 export const reportAPI = {
@@ -212,6 +217,12 @@ export const complaintAPI = {
   downloadMyComplaints: () => {
     console.log('Downloading user complaints');
     return API.get('/complaints/download/my-complaints', { responseType: 'blob' });
+  },
+  
+  // ADDED: Get users available for complaints
+  getAvailableUsers: () => {
+    console.log('Fetching users available for complaints');
+    return API.get('/complaints/available-users');
   },
   
   // Enhanced complaint reporting

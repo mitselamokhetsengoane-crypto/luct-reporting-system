@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { reportAPI, complaintAPI, assignmentAPI, ratingAPI, generateAndDownloadReport } from '../services/api';
+import { reportAPI, complaintAPI, assignmentAPI, ratingAPI, generateAndDownloadReport, authAPI } from '../services/api';
 
 const EnhancedDashboard = ({ user, onLogout }) => {
   const [dashboardData, setDashboardData] = useState({
@@ -175,10 +175,39 @@ const EnhancedDashboard = ({ user, onLogout }) => {
 
   const loadAvailableUsers = async () => {
     try {
-      const response = await assignmentAPI.getLecturers();
+      console.log('Loading available users for complaints...');
+      
+      // TRY DIFFERENT API ENDPOINTS IN ORDER
+      let response;
+      
+      try {
+        // First try the new complaint-specific endpoint
+        response = await complaintAPI.getAvailableUsers();
+        console.log('Users loaded from complaint API:', response.data);
+      } catch (error) {
+        console.log('Complaint API failed, trying auth API...');
+        try {
+          // Fallback to auth API
+          response = await authAPI.getAvailableUsers();
+          console.log('Users loaded from auth API:', response.data);
+        } catch (authError) {
+          console.log('Auth API failed, trying assignment API...');
+          // Final fallback to assignment API
+          response = await assignmentAPI.getLecturers();
+          console.log('Users loaded from assignment API:', response.data);
+        }
+      }
+      
       setAvailableUsers(response.data || []);
+      
+      if (response.data && response.data.length === 0) {
+        console.warn('No users available for complaints');
+      } else {
+        console.log(`Successfully loaded ${response.data.length} users for complaints`);
+      }
     } catch (error) {
-      console.error('Error loading users:', error);
+      console.error('Error loading users for complaints:', error);
+      // Set empty array as fallback
       setAvailableUsers([]);
     }
   };
@@ -618,10 +647,15 @@ const EnhancedDashboard = ({ user, onLogout }) => {
                   <option value="">Select Person</option>
                   {getAvailableTargets().map(person => (
                     <option key={person.id} value={person.id}>
-                      {person.name} ({person.role.toUpperCase()})
+                      {person.name} ({person.role.toUpperCase()}) - {person.faculty}
                     </option>
                   ))}
                 </select>
+                {getAvailableTargets().length === 0 && (
+                  <p className="error-text" style={{color: '#e74c3c', fontSize: '0.8rem', marginTop: '0.5rem'}}>
+                    No users available for complaints. Please try refreshing the page.
+                  </p>
+                )}
               </div>
 
               <div className="form-group">
@@ -655,8 +689,12 @@ const EnhancedDashboard = ({ user, onLogout }) => {
                 <button type="button" onClick={closeComplaintModal} className="btn btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  Submit Complaint
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={getAvailableTargets().length === 0}
+                >
+                  {getAvailableTargets().length === 0 ? 'No Users Available' : 'Submit Complaint'}
                 </button>
               </div>
             </form>
