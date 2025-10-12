@@ -1,21 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { complaintAPI, assignmentAPI } from '../services/api';
 
-const ComplaintForm = ({ user, onLogout }) => {
+const EnhancedComplaintForm = ({ user, onLogout }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     complaint_against_id: '',
-    complaint_type: 'student_lecturer'
+    complaint_type: 'student_lecturer',
+    priority: 'medium'
   });
   const [users, setUsers] = useState([]);
   const [myComplaints, setMyComplaints] = useState([]);
   const [complaintsForMe, setComplaintsForMe] = useState([]);
+  const [allComplaints, setAllComplaints] = useState([]);
   const [activeTab, setActiveTab] = useState('file');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [responseText, setResponseText] = useState(''); // Single response state
+  const [responseText, setResponseText] = useState('');
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [filters, setFilters] = useState({
+    status: '',
+    priority: '',
+    type: '',
+    dateRange: ''
+  });
 
   useEffect(() => {
     loadData();
@@ -23,15 +31,17 @@ const ComplaintForm = ({ user, onLogout }) => {
 
   const loadData = async () => {
     try {
-      const [usersResponse, myComplaintsResponse, forMeResponse] = await Promise.all([
+      const [usersResponse, myComplaintsResponse, forMeResponse, allComplaintsResponse] = await Promise.all([
         assignmentAPI.getLecturers(),
         complaintAPI.getMyComplaints(),
-        complaintAPI.getComplaintsForMe()
+        complaintAPI.getComplaintsForMe(),
+        complaintAPI.getAllComplaints()
       ]);
 
       setUsers(usersResponse.data);
       setMyComplaints(myComplaintsResponse.data);
       setComplaintsForMe(forMeResponse.data);
+      setAllComplaints(allComplaintsResponse.data);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -63,7 +73,8 @@ const ComplaintForm = ({ user, onLogout }) => {
         title: '',
         description: '',
         complaint_against_id: '',
-        complaint_type: 'student_lecturer'
+        complaint_type: 'student_lecturer',
+        priority: 'medium'
       });
       loadData();
       setActiveTab('my-complaints');
@@ -83,7 +94,7 @@ const ComplaintForm = ({ user, onLogout }) => {
     try {
       await complaintAPI.respond(complaintId, responseText);
       alert('Response submitted successfully!');
-      setResponseText(''); // Clear response text
+      setResponseText('');
       setSelectedComplaint(null);
       loadData();
     } catch (error) {
@@ -96,11 +107,43 @@ const ComplaintForm = ({ user, onLogout }) => {
     setResponseText(complaint.response || '');
   };
 
+  const handleUpdateStatus = async (complaintId, status) => {
+    try {
+      await complaintAPI.updateComplaintStatus(complaintId, status);
+      alert(`Complaint status updated to ${status}`);
+      loadData();
+    } catch (error) {
+      alert('Error updating status');
+    }
+  };
+
+  const generateComplaintReport = async (type = 'all') => {
+    try {
+      const response = await complaintAPI.generateComplaintReport({
+        ...filters,
+        report_type: type
+      });
+      
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `complaints-report-${type}-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      setMessage('Complaint report generated successfully!');
+    } catch (error) {
+      setMessage('Error generating complaint report');
+    }
+  };
+
   const getAvailableTargets = () => {
     switch (user.role) {
       case 'student':
-        return users.filter(u => u.role === 'lecturer');
+        return users.filter(u => u.role === 'lecturer' || u.role === 'principal_lecturer');
       case 'lecturer':
+      case 'principal_lecturer':
         return users.filter(u => u.role === 'prl' && u.id !== user.id);
       case 'prl':
         return users.filter(u => u.role === 'pl' && u.id !== user.id);
@@ -111,11 +154,53 @@ const ComplaintForm = ({ user, onLogout }) => {
     }
   };
 
+  const getComplaintStats = () => {
+    const filteredComplaints = allComplaints.filter(complaint => {
+      const matchesStatus = !filters.status || complaint.status === filters.status;
+      const matchesPriority = !filters.priority || complaint.priority === filters.priority;
+      const matchesType = !filters.type || complaint.complaint_type === filters.type;
+      return matchesStatus && matchesPriority && matchesType;
+    });
+
+    return {
+      total: filteredComplaints.length,
+      pending: filteredComplaints.filter(c => c.status === 'pending').length,
+      inProgress: filteredComplaints.filter(c => c.status === 'in_progress').length,
+      resolved: filteredComplaints.filter(c => c.status === 'resolved').length,
+      highPriority: filteredComplaints.filter(c => c.priority === 'high' || c.priority === 'urgent').length
+    };
+  };
+
+  const stats = getComplaintStats();
+
+  const getPriorityBadge = (priority) => {
+    const priorityConfig = {
+      low: { color: '#27ae60', label: 'Low' },
+      medium: { color: '#f39c12', label: 'Medium' },
+      high: { color: '#e74c3c', label: 'High' },
+      urgent: { color: '#c0392b', label: 'Urgent' }
+    };
+    
+    const config = priorityConfig[priority] || { color: '#95a5a6', label: priority };
+    return (
+      <span style={{
+        background: config.color,
+        color: 'white',
+        padding: '0.25rem 0.5rem',
+        borderRadius: '12px',
+        fontSize: '0.8rem',
+        fontWeight: 'bold'
+      }}>
+        {config.label}
+      </span>
+    );
+  };
+
   return (
     <div className="form-container">
       <div className="form-card">
         <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2>Complaint Management</h2>
+          <h2>Enhanced Complaint Management</h2>
           <button 
             onClick={onLogout}
             className="btn btn-secondary"
@@ -125,7 +210,7 @@ const ComplaintForm = ({ user, onLogout }) => {
           </button>
         </div>
 
-        <div className="tab-navigation" style={{ marginBottom: '2rem', display: 'flex', gap: '1rem' }}>
+        <div className="tab-navigation" style={{ marginBottom: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setActiveTab('file')}
             className={`btn ${activeTab === 'file' ? 'btn-primary' : 'btn-secondary'}`}
@@ -143,6 +228,20 @@ const ComplaintForm = ({ user, onLogout }) => {
             className={`btn ${activeTab === 'for-me' ? 'btn-primary' : 'btn-secondary'}`}
           >
             Complaints For Me
+          </button>
+          {(user.role === 'pl' || user.role === 'prl' || user.role === 'fmg') && (
+            <button 
+              onClick={() => setActiveTab('manage')}
+              className={`btn ${activeTab === 'manage' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              Manage All
+            </button>
+          )}
+          <button 
+            onClick={() => setActiveTab('reports')}
+            className={`btn ${activeTab === 'reports' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            Reports
           </button>
         </div>
 
@@ -165,6 +264,35 @@ const ComplaintForm = ({ user, onLogout }) => {
                   placeholder="Brief description of the complaint"
                   required
                 />
+              </div>
+
+              <div className="form-group">
+                <label>Complaint Type</label>
+                <select 
+                  name="complaint_type" 
+                  value={formData.complaint_type} 
+                  onChange={handleChange}
+                >
+                  <option value="student_lecturer">Against Lecturer</option>
+                  <option value="lecturer_prl">Against PRL</option>
+                  <option value="prl_pl">Against Program Leader</option>
+                  <option value="faculty_issue">Faculty Issue</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Priority</label>
+                <select 
+                  name="priority" 
+                  value={formData.priority} 
+                  onChange={handleChange}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
               </div>
 
               <div className="form-group full-width">
@@ -213,6 +341,8 @@ const ComplaintForm = ({ user, onLogout }) => {
                 <tr>
                   <th>Title</th>
                   <th>Against</th>
+                  <th>Type</th>
+                  <th>Priority</th>
                   <th>Date</th>
                   <th>Status</th>
                   <th>Response</th>
@@ -223,6 +353,18 @@ const ComplaintForm = ({ user, onLogout }) => {
                   <tr key={complaint.id}>
                     <td>{complaint.title}</td>
                     <td>{complaint.complaint_against_name}</td>
+                    <td>
+                      <span className={`complaint-type ${complaint.complaint_type}`} style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '12px',
+                        fontSize: '0.8rem',
+                        background: '#3498db',
+                        color: 'white'
+                      }}>
+                        {complaint.complaint_type.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td>{getPriorityBadge(complaint.priority)}</td>
                     <td>{new Date(complaint.created_at).toLocaleDateString()}</td>
                     <td>
                       <span className={`status-${complaint.status}`} style={{
@@ -231,7 +373,7 @@ const ComplaintForm = ({ user, onLogout }) => {
                         fontSize: '0.8rem',
                         fontWeight: 'bold',
                         background: complaint.status === 'resolved' ? '#27ae60' : 
-                                   complaint.status === 'pending' ? '#f39c12' : '#e74c3c',
+                                   complaint.status === 'in_progress' ? '#f39c12' : '#e74c3c',
                         color: 'white'
                       }}>
                         {complaint.status.toUpperCase()}
@@ -264,7 +406,6 @@ const ComplaintForm = ({ user, onLogout }) => {
           <div className="data-table">
             <h3 style={{ marginBottom: '1rem', color: '#2c3e50' }}>Complaints Requiring Your Response</h3>
             
-            {/* Global Response Input */}
             {selectedComplaint && (
               <div style={{ marginBottom: '2rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px' }}>
                 <h4 style={{ marginBottom: '0.5rem' }}>Response to: {selectedComplaint.title}</h4>
@@ -283,7 +424,7 @@ const ComplaintForm = ({ user, onLogout }) => {
                     padding: '0.5rem'
                   }}
                 />
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button 
                     onClick={() => handleRespond(selectedComplaint.id)}
                     className="btn btn-primary"
@@ -300,6 +441,14 @@ const ComplaintForm = ({ user, onLogout }) => {
                   >
                     Cancel
                   </button>
+                  {selectedComplaint.status !== 'resolved' && (
+                    <button 
+                      onClick={() => handleUpdateStatus(selectedComplaint.id, 'resolved')}
+                      className="btn btn-success"
+                    >
+                      Mark as Resolved
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -310,9 +459,11 @@ const ComplaintForm = ({ user, onLogout }) => {
                   <th>Select</th>
                   <th>Title</th>
                   <th>From</th>
+                  <th>Type</th>
+                  <th>Priority</th>
                   <th>Date</th>
+                  <th>Status</th>
                   <th>Description</th>
-                  <th>Current Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -330,20 +481,33 @@ const ComplaintForm = ({ user, onLogout }) => {
                     </td>
                     <td>{complaint.title}</td>
                     <td>{complaint.complainant_name}</td>
+                    <td>
+                      <span className={`complaint-type ${complaint.complaint_type}`} style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '12px',
+                        fontSize: '0.8rem',
+                        background: '#3498db',
+                        color: 'white'
+                      }}>
+                        {complaint.complaint_type.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td>{getPriorityBadge(complaint.priority)}</td>
                     <td>{new Date(complaint.created_at).toLocaleDateString()}</td>
-                    <td>{complaint.description}</td>
                     <td>
                       <span className={`status-${complaint.status}`} style={{
                         padding: '0.25rem 0.5rem',
                         borderRadius: '12px',
                         fontSize: '0.8rem',
                         fontWeight: 'bold',
-                        background: complaint.status === 'resolved' ? '#27ae60' : '#f39c12',
+                        background: complaint.status === 'resolved' ? '#27ae60' : 
+                                   complaint.status === 'in_progress' ? '#f39c12' : '#e74c3c',
                         color: 'white'
                       }}>
                         {complaint.status.toUpperCase()}
                       </span>
                     </td>
+                    <td>{complaint.description.substring(0, 100)}...</td>
                   </tr>
                 ))}
               </tbody>
@@ -355,9 +519,208 @@ const ComplaintForm = ({ user, onLogout }) => {
             )}
           </div>
         )}
+
+        {activeTab === 'manage' && (user.role === 'pl' || user.role === 'prl' || user.role === 'fmg') && (
+          <div className="complaints-management">
+            <div className="filters" style={{ marginBottom: '2rem' }}>
+              <h3>Filter Complaints</h3>
+              <div className="filter-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <select value={filters.status} onChange={(e) => setFilters({...filters, status: e.target.value})}>
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+                <select value={filters.priority} onChange={(e) => setFilters({...filters, priority: e.target.value})}>
+                  <option value="">All Priorities</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+                <select value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})}>
+                  <option value="">All Types</option>
+                  <option value="student_lecturer">Student vs Lecturer</option>
+                  <option value="lecturer_prl">Lecturer vs PRL</option>
+                  <option value="prl_pl">PRL vs PL</option>
+                  <option value="faculty_issue">Faculty Issue</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="data-table">
+              <table style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>From</th>
+                    <th>Against</th>
+                    <th>Type</th>
+                    <th>Priority</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allComplaints.filter(complaint => {
+                    const matchesStatus = !filters.status || complaint.status === filters.status;
+                    const matchesPriority = !filters.priority || complaint.priority === filters.priority;
+                    const matchesType = !filters.type || complaint.complaint_type === filters.type;
+                    return matchesStatus && matchesPriority && matchesType;
+                  }).map(complaint => (
+                    <tr key={complaint.id}>
+                      <td>{complaint.title}</td>
+                      <td>{complaint.complainant_name}</td>
+                      <td>{complaint.complaint_against_name}</td>
+                      <td>
+                        <span className={`complaint-type ${complaint.complaint_type}`} style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '12px',
+                          fontSize: '0.8rem',
+                          background: '#3498db',
+                          color: 'white'
+                        }}>
+                          {complaint.complaint_type.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td>{getPriorityBadge(complaint.priority)}</td>
+                      <td>{new Date(complaint.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <span className={`status-${complaint.status}`} style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '12px',
+                          fontSize: '0.8rem',
+                          fontWeight: 'bold',
+                          background: complaint.status === 'resolved' ? '#27ae60' : 
+                                     complaint.status === 'in_progress' ? '#f39c12' : '#e74c3c',
+                          color: 'white'
+                        }}>
+                          {complaint.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                          <button 
+                            onClick={() => handleSelectComplaint(complaint)}
+                            className="btn btn-primary btn-sm"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                          >
+                            Respond
+                          </button>
+                          {complaint.status !== 'resolved' && (
+                            <button 
+                              onClick={() => handleUpdateStatus(complaint.id, 'resolved')}
+                              className="btn btn-success btn-sm"
+                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                            >
+                              Resolve
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="complaint-reports">
+            <h3>Complaint Reports & Analytics</h3>
+            
+            <div className="stats-grid" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gap: '1rem', 
+              marginBottom: '2rem' 
+            }}>
+              <div className="stat-card" style={{ 
+                background: '#e74c3c', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                textAlign: 'center',
+                color: 'white'
+              }}>
+                <h3>{stats.total}</h3>
+                <p>Total Complaints</p>
+              </div>
+              <div className="stat-card" style={{ 
+                background: '#f39c12', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                textAlign: 'center',
+                color: 'white'
+              }}>
+                <h3>{stats.pending}</h3>
+                <p>Pending</p>
+              </div>
+              <div className="stat-card" style={{ 
+                background: '#3498db', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                textAlign: 'center',
+                color: 'white'
+              }}>
+                <h3>{stats.inProgress}</h3>
+                <p>In Progress</p>
+              </div>
+              <div className="stat-card" style={{ 
+                background: '#27ae60', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                textAlign: 'center',
+                color: 'white'
+              }}>
+                <h3>{stats.resolved}</h3>
+                <p>Resolved</p>
+              </div>
+              <div className="stat-card" style={{ 
+                background: '#c0392b', 
+                padding: '1rem', 
+                borderRadius: '8px', 
+                textAlign: 'center',
+                color: 'white'
+              }}>
+                <h3>{stats.highPriority}</h3>
+                <p>High Priority</p>
+              </div>
+            </div>
+
+            <div className="report-actions" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <button onClick={() => generateComplaintReport('all')} className="btn btn-primary">
+                Generate Comprehensive Report
+              </button>
+              <button onClick={() => generateComplaintReport('monthly')} className="btn btn-secondary">
+                Monthly Summary
+              </button>
+              <button onClick={() => generateComplaintReport('priority')} className="btn btn-secondary">
+                Priority Analysis
+              </button>
+            </div>
+
+            <div className="report-info" style={{ 
+              marginTop: '2rem', 
+              padding: '1.5rem', 
+              background: '#f8f9fa', 
+              borderRadius: '8px' 
+            }}>
+              <h4>Report Information</h4>
+              <p><strong>Current Filters:</strong></p>
+              <ul>
+                <li>Status: {filters.status || 'All'}</li>
+                <li>Priority: {filters.priority || 'All'}</li>
+                <li>Type: {filters.type || 'All'}</li>
+              </ul>
+              <p><strong>Total Records:</strong> {stats.total} complaints</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-export default ComplaintForm;
+export default EnhancedComplaintForm;

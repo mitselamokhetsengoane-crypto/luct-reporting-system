@@ -143,13 +143,40 @@ export const reportAPI = {
     console.log('Fetching pending approval reports');
     return API.get('/reports/pending-approval');
   },
+  
+  // NEW: Enhanced report generation endpoints
+  generatePerformanceReport: (filters) => {
+    console.log('Generating performance report:', filters);
+    return API.post('/reports/generate/performance', filters, { 
+      responseType: 'blob',
+      timeout: 60000 // Longer timeout for report generation
+    });
+  },
+  generateAttendanceReport: (filters) => {
+    console.log('Generating attendance report:', filters);
+    return API.post('/reports/generate/attendance', filters, { 
+      responseType: 'blob',
+      timeout: 60000
+    });
+  },
+  generateFacultyReport: (filters) => {
+    console.log('Generating faculty report:', filters);
+    return API.post('/reports/generate/faculty', filters, { 
+      responseType: 'blob',
+      timeout: 60000
+    });
+  },
+  getReportStatistics: (userId) => {
+    console.log('Fetching report statistics for user:', userId);
+    return API.get(`/reports/statistics/${userId}`);
+  }
 };
 
 export const complaintAPI = {
   create: (complaintData) => {
     console.log('Creating complaint:', { 
       title: complaintData.title,
-      against: complaintData.complaint_against 
+      against: complaintData.target || complaintData.complaint_against_id
     });
     return API.post('/complaints', complaintData);
   },
@@ -161,14 +188,35 @@ export const complaintAPI = {
     console.log('Fetching complaints for user');
     return API.get('/complaints/for-me');
   },
+  getAllComplaints: () => {
+    console.log('Fetching all complaints');
+    return API.get('/complaints/all');
+  },
   respond: (complaintId, response) => {
     console.log('Responding to complaint:', { complaintId });
     return API.patch(`/complaints/${complaintId}/respond`, { response });
+  },
+  updateComplaintStatus: (complaintId, status) => {
+    console.log('Updating complaint status:', { complaintId, status });
+    return API.patch(`/complaints/${complaintId}/status`, { status });
   },
   downloadMyComplaints: () => {
     console.log('Downloading user complaints');
     return API.get('/complaints/download/my-complaints', { responseType: 'blob' });
   },
+  
+  // NEW: Enhanced complaint reporting
+  generateComplaintReport: (filters) => {
+    console.log('Generating complaint report:', filters);
+    return API.post('/complaints/generate-report', filters, { 
+      responseType: 'blob',
+      timeout: 60000
+    });
+  },
+  getComplaintStatistics: () => {
+    console.log('Fetching complaint statistics');
+    return API.get('/complaints/statistics');
+  }
 };
 
 export const assignmentAPI = {
@@ -188,7 +236,8 @@ export const assignmentAPI = {
     console.log('Assigning course:', {
       course: assignmentData.course_id,
       lecturer: assignmentData.lecturer_id,
-      class: assignmentData.class_id
+      class: assignmentData.class_id,
+      type: assignmentData.assignment_type
     });
     return API.post('/assignments/assign', assignmentData);
   },
@@ -200,10 +249,27 @@ export const assignmentAPI = {
     console.log('Fetching all assignments');
     return API.get('/assignments/all-assignments');
   },
+  deleteAssignment: (assignmentId) => {
+    console.log('Deleting assignment:', { assignmentId });
+    return API.delete(`/assignments/${assignmentId}`);
+  },
   downloadAssignments: () => {
     console.log('Downloading assignments');
     return API.get('/assignments/download/assignments', { responseType: 'blob' });
   },
+  
+  // NEW: Enhanced assignment reporting
+  generateAssignmentReport: (type) => {
+    console.log('Generating assignment report:', { type });
+    return API.get(`/assignments/reports/${type}`, { 
+      responseType: 'blob',
+      timeout: 60000
+    });
+  },
+  getAssignmentStatistics: () => {
+    console.log('Fetching assignment statistics');
+    return API.get('/assignments/statistics');
+  }
 };
 
 export const ratingAPI = {
@@ -243,6 +309,12 @@ export const ratingAPI = {
     console.log('Deleting rating:', { ratingId });
     return API.delete(`/ratings/${ratingId}`);
   },
+  
+  // NEW: Rating statistics
+  getRatingStatistics: (lecturerId) => {
+    console.log('Fetching rating statistics:', { lecturerId });
+    return API.get(`/ratings/statistics/${lecturerId}`);
+  }
 };
 
 // Public API endpoints with enhanced timeout handling
@@ -329,6 +401,20 @@ export const downloadFile = (blob, filename) => {
   }
 };
 
+// Report generation helper
+export const generateAndDownloadReport = async (generateFunction, filters, filename) => {
+  try {
+    console.log('Starting report generation:', { filename, filters });
+    const response = await generateFunction(filters);
+    await downloadFile(response.data, filename);
+    console.log('Report generated and downloaded successfully:', filename);
+    return { success: true, filename };
+  } catch (error) {
+    console.error('Report generation failed:', error);
+    throw new Error(`Failed to generate report: ${error.message}`);
+  }
+};
+
 // API health check utility
 export const checkAPIHealth = async () => {
   try {
@@ -340,6 +426,29 @@ export const checkAPIHealth = async () => {
     console.error('API Health Check Failed:', error);
     return { healthy: false, error: error.message };
   }
+};
+
+// Cache management utilities
+export const clearApiCache = (key = null) => {
+  if (key) {
+    apiCache.delete(key);
+    console.log(`Cleared cache for key: ${key}`);
+  } else {
+    apiCache.clear();
+    console.log('Cleared all API cache');
+  }
+};
+
+export const getCacheInfo = () => {
+  return {
+    size: apiCache.size,
+    keys: Array.from(apiCache.keys()),
+    entries: Array.from(apiCache.entries()).map(([key, value]) => ({
+      key,
+      timestamp: value.timestamp,
+      age: Date.now() - value.timestamp
+    }))
+  };
 };
 
 export const API_BASE_URL = getApiBaseUrl();

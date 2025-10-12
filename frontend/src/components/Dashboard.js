@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { reportAPI, complaintAPI, assignmentAPI, ratingAPI } from '../services/api';
+import { reportAPI, complaintAPI, assignmentAPI, ratingAPI, generateAndDownloadReport } from '../services/api';
 
-const Dashboard = ({ user, onLogout }) => {
+const EnhancedDashboard = ({ user, onLogout }) => {
   const [dashboardData, setDashboardData] = useState({
     reports: [],
     complaints: [],
@@ -32,11 +32,15 @@ const Dashboard = ({ user, onLogout }) => {
     title: '',
     description: '',
     complaint_against_id: '',
-    complaint_type: 'student_lecturer'
+    complaint_type: 'student_lecturer',
+    priority: 'medium'
   });
+  const [reportGenerationLoading, setReportGenerationLoading] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
+    loadAvailableUsers();
   }, [user]);
 
   const loadDashboardData = async () => {
@@ -55,6 +59,7 @@ const Dashboard = ({ user, onLogout }) => {
         throw new Error('User role not defined');
       }
 
+      // Load data based on user role
       switch (user.role) {
         case 'pl':
         case 'prl':
@@ -81,6 +86,7 @@ const Dashboard = ({ user, onLogout }) => {
           break;
 
         case 'lecturer':
+        case 'principal_lecturer':
           try {
             console.log('Loading lecturer data for user ID:', user.id);
             if (!user.id) {
@@ -135,6 +141,7 @@ const Dashboard = ({ user, onLogout }) => {
           break;
       }
 
+      // Calculate statistics
       const stats = {
         totalReports: Array.isArray(reports) ? reports.length : 0,
         pendingReports: Array.isArray(reports) ? reports.filter(report => 
@@ -146,7 +153,7 @@ const Dashboard = ({ user, onLogout }) => {
         ).length : 0,
         totalAssignments: Array.isArray(assignments) ? assignments.length : 0,
         totalRatings: Array.isArray(ratings) ? ratings.length : 0,
-        averageRating: user.role === 'lecturer' ? 
+        averageRating: (user.role === 'lecturer' || user.role === 'principal_lecturer') ? 
           (await calculateLecturerAverageRating(user.id)) : 0
       };
 
@@ -163,6 +170,16 @@ const Dashboard = ({ user, onLogout }) => {
       setError(`Failed to load dashboard: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAvailableUsers = async () => {
+    try {
+      const response = await assignmentAPI.getLecturers();
+      setAvailableUsers(response.data || []);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      setAvailableUsers([]);
     }
   };
 
@@ -255,7 +272,8 @@ const Dashboard = ({ user, onLogout }) => {
       title: '',
       description: '',
       complaint_against_id: '',
-      complaint_type: 'student_lecturer'
+      complaint_type: 'student_lecturer',
+      priority: 'medium'
     });
     setShowComplaintModal(true);
   };
@@ -266,26 +284,26 @@ const Dashboard = ({ user, onLogout }) => {
       title: '',
       description: '',
       complaint_against_id: '',
-      complaint_type: 'student_lecturer'
+      complaint_type: 'student_lecturer',
+      priority: 'medium'
     });
   };
 
   const handleComplaintSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Validate required fields
       if (!complaintForm.title || !complaintForm.description || !complaintForm.complaint_against_id) {
         alert('Please fill in all required fields: Title, Description, and Complaint Target');
         return;
       }
 
-     const complaintData = {
-  title: complaintForm.title,
-  description: complaintForm.description,
-  target: complaintForm.complaint_against_id, // ✅ fix name to match backend
-  complaint_type: complaintForm.complaint_type
-};
-
+      const complaintData = {
+        title: complaintForm.title,
+        description: complaintForm.description,
+        target: complaintForm.complaint_against_id,
+        complaint_type: complaintForm.complaint_type,
+        priority: complaintForm.priority
+      };
 
       console.log('Submitting complaint:', complaintData);
       await complaintAPI.create(complaintData);
@@ -307,6 +325,55 @@ const Dashboard = ({ user, onLogout }) => {
     }));
   };
 
+  // Report Generation Functions
+  const handleGenerateReport = async (reportType, filters = {}) => {
+    setReportGenerationLoading(true);
+    try {
+      let generateFunction;
+      let filename;
+
+      switch (reportType) {
+        case 'performance':
+          generateFunction = reportAPI.generatePerformanceReport;
+          filename = `performance-report-${new Date().toISOString().split('T')[0]}.csv`;
+          break;
+        case 'attendance':
+          generateFunction = reportAPI.generateAttendanceReport;
+          filename = `attendance-report-${new Date().toISOString().split('T')[0]}.csv`;
+          break;
+        case 'faculty':
+          generateFunction = reportAPI.generateFacultyReport;
+          filename = `faculty-report-${new Date().toISOString().split('T')[0]}.csv`;
+          break;
+        case 'assignment':
+          generateFunction = assignmentAPI.generateAssignmentReport;
+          filename = `assignment-report-${new Date().toISOString().split('T')[0]}.csv`;
+          break;
+        case 'complaint':
+          generateFunction = complaintAPI.generateComplaintReport;
+          filename = `complaint-report-${new Date().toISOString().split('T')[0]}.csv`;
+          break;
+        default:
+          throw new Error('Invalid report type');
+      }
+
+      const reportData = {
+        ...filters,
+        user_id: user.id,
+        user_role: user.role,
+        faculty: user.faculty
+      };
+
+      await generateAndDownloadReport(generateFunction, reportData, filename);
+      alert('Report generated successfully!');
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Failed to generate report: ' + error.message);
+    } finally {
+      setReportGenerationLoading(false);
+    }
+  };
+
   // Check if user can rate a specific report
   const canRateReport = (report) => {
     if (!report) return false;
@@ -319,7 +386,7 @@ const Dashboard = ({ user, onLogout }) => {
       return true;
     }
     
-    if (user.role === 'lecturer' && (
+    if ((user.role === 'lecturer' || user.role === 'principal_lecturer') && (
       report.lecturer_id === user.id || 
       (user.faculty && report.faculty === user.faculty)
     )) {
@@ -347,8 +414,25 @@ const Dashboard = ({ user, onLogout }) => {
       case 'prl': return 'Program Review Leader Dashboard';
       case 'fmg': return 'Faculty Management Dashboard';
       case 'lecturer': return 'Lecturer Dashboard';
+      case 'principal_lecturer': return 'Principal Lecturer Dashboard';
       case 'student': return 'Student Dashboard';
       default: return 'Dashboard';
+    }
+  };
+
+  const getAvailableTargets = () => {
+    switch (user.role) {
+      case 'student':
+        return availableUsers.filter(u => u.role === 'lecturer' || u.role === 'principal_lecturer');
+      case 'lecturer':
+      case 'principal_lecturer':
+        return availableUsers.filter(u => u.role === 'prl' && u.id !== user.id);
+      case 'prl':
+        return availableUsers.filter(u => u.role === 'pl' && u.id !== user.id);
+      case 'pl':
+        return availableUsers.filter(u => u.role === 'fmg' && u.id !== user.id);
+      default:
+        return [];
     }
   };
 
@@ -493,9 +577,11 @@ const Dashboard = ({ user, onLogout }) => {
                   required
                 >
                   <option value="">Select Person</option>
-                  <option value="1">Lecturer 1</option>
-                  <option value="2">Lecturer 2</option>
-                  <option value="3">Program Leader</option>
+                  {getAvailableTargets().map(person => (
+                    <option key={person.id} value={person.id}>
+                      {person.name} ({person.role.toUpperCase()})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -508,6 +594,22 @@ const Dashboard = ({ user, onLogout }) => {
                 >
                   <option value="student_lecturer">Against Lecturer</option>
                   <option value="lecturer_prl">Against Program Review Leader</option>
+                  <option value="prl_pl">Against Program Leader</option>
+                  <option value="faculty_issue">Faculty Issue</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Priority:</label>
+                <select 
+                  value={complaintForm.priority}
+                  onChange={(e) => handleComplaintChange('priority', e.target.value)}
+                  required
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
                 </select>
               </div>
 
@@ -581,7 +683,7 @@ const Dashboard = ({ user, onLogout }) => {
           </div>
         </div>
 
-        {user.role === 'lecturer' && (
+        {(user.role === 'lecturer' || user.role === 'principal_lecturer') && (
           <div className="stat-card">
             <div className="stat-icon" style={{ background: '#e67e22' }}></div>
             <div className="stat-content">
@@ -633,6 +735,29 @@ const Dashboard = ({ user, onLogout }) => {
           </>
         )}
 
+        {(user.role === 'lecturer' || user.role === 'principal_lecturer') && (
+          <>
+            <button 
+              className={`tab-btn ${activeTab === 'my-reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('my-reports')}
+            >
+              My Reports
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'report-generation' ? 'active' : ''}`}
+              onClick={() => setActiveTab('report-generation')}
+            >
+              Generate Reports
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
+              onClick={() => setActiveTab('my-complaints')}
+            >
+              My Complaints
+            </button>
+          </>
+        )}
+
         {(user.role === 'pl' || user.role === 'prl' || user.role === 'fmg') && (
           <>
             <button 
@@ -655,22 +780,11 @@ const Dashboard = ({ user, onLogout }) => {
                 Assignments
               </button>
             )}
-          </>
-        )}
-
-        {user.role === 'lecturer' && (
-          <>
             <button 
-              className={`tab-btn ${activeTab === 'my-reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('my-reports')}
+              className={`tab-btn ${activeTab === 'report-generation' ? 'active' : ''}`}
+              onClick={() => setActiveTab('report-generation')}
             >
-              My Reports
-            </button>
-            <button 
-              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
-              onClick={() => setActiveTab('my-complaints')}
-            >
-              My Complaints
+              Generate Reports
             </button>
           </>
         )}
@@ -746,7 +860,17 @@ const Dashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'my-reports' && user.role === 'lecturer' && (
+        {activeTab === 'report-generation' && (user.role === 'pl' || user.role === 'prl' || user.role === 'lecturer' || user.role === 'principal_lecturer') && (
+          <ReportGenerationTab 
+            user={user}
+            reports={dashboardData.reports}
+            assignments={dashboardData.assignments}
+            onGenerateReport={handleGenerateReport}
+            loading={reportGenerationLoading}
+          />
+        )}
+
+        {activeTab === 'my-reports' && (user.role === 'lecturer' || user.role === 'principal_lecturer') && (
           <MyReportsTab 
             reports={dashboardData.reports}
             onRateReport={openRatingModal}
@@ -755,13 +879,262 @@ const Dashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'my-complaints' && user.role === 'lecturer' && (
-          <MyComplaintsTab 
+        {activeTab === 'my-complaints' && (user.role === 'lecturer' || user.role === 'principal_lecturer') && (
+          <MyComplaintsTabLecturer 
             complaints={dashboardData.complaints}
             user={user}
           />
         )}
       </div>
+    </div>
+  );
+};
+
+// Report Generation Component
+const ReportGenerationTab = ({ user, reports, assignments, onGenerateReport, loading }) => {
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    course_id: '',
+    class_id: '',
+    status: '',
+    reportType: 'performance'
+  });
+
+  const getReportStats = () => {
+    const filteredReports = reports.filter(report => {
+      const matchesDate = (!filters.startDate || new Date(report.date_of_lecture) >= new Date(filters.startDate)) &&
+                         (!filters.endDate || new Date(report.date_of_lecture) <= new Date(filters.endDate));
+      const matchesStatus = !filters.status || report.status === filters.status;
+      return matchesDate && matchesStatus;
+    });
+
+    return {
+      total: filteredReports.length,
+      approved: filteredReports.filter(r => r.status === 'approved').length,
+      pending: filteredReports.filter(r => r.status.includes('pending')).length,
+      averageAttendance: filteredReports.length ? 
+        (filteredReports.reduce((sum, r) => sum + (r.students_present || 0), 0) / filteredReports.length).toFixed(1) : 0
+    };
+  };
+
+  const stats = getReportStats();
+
+  const handleGenerate = () => {
+    onGenerateReport(filters.reportType, filters);
+  };
+
+  const getAvailableReportTypes = () => {
+    const baseTypes = [
+      { value: 'performance', label: 'Performance Report' },
+      { value: 'attendance', label: 'Attendance Report' }
+    ];
+
+    if (user.role === 'prl' || user.role === 'pl') {
+      baseTypes.push({ value: 'faculty', label: 'Faculty Overview' });
+    }
+
+    if (user.role === 'pl') {
+      baseTypes.push({ value: 'assignment', label: 'Assignment Report' });
+    }
+
+    if (user.role === 'prl' || user.role === 'pl' || user.role === 'fmg') {
+      baseTypes.push({ value: 'complaint', label: 'Complaint Report' });
+    }
+
+    return baseTypes;
+  };
+
+  return (
+    <div className="report-generation-tab">
+      <h2>Report Generation</h2>
+      
+      <div className="filters-section" style={{ 
+        background: '#2c3e50', 
+        padding: '1.5rem', 
+        borderRadius: '8px', 
+        marginBottom: '2rem',
+        border: '1px solid #34495e'
+      }}>
+        <h3 style={{ color: '#fff', marginBottom: '1rem' }}>Report Configuration</h3>
+        <div className="filter-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: '1rem' 
+        }}>
+          <div className="form-group">
+            <label style={{ color: '#fff' }}>Report Type</label>
+            <select 
+              value={filters.reportType} 
+              onChange={(e) => setFilters({...filters, reportType: e.target.value})}
+            >
+              {getAvailableReportTypes().map(type => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="form-group">
+            <label style={{ color: '#fff' }}>Start Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters({...filters, startDate: e.target.value})}
+            />
+          </div>
+          
+          <div className="form-group">
+            <label style={{ color: '#fff' }}>End Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters({...filters, endDate: e.target.value})}
+            />
+          </div>
+          
+          <div className="form-group">
+            <label style={{ color: '#fff' }}>Status</label>
+            <select 
+              value={filters.status} 
+              onChange={(e) => setFilters({...filters, status: e.target.value})}
+            >
+              <option value="">All Status</option>
+              <option value="approved">Approved</option>
+              <option value="pending_student">Pending Student</option>
+              <option value="pending_prl">Pending PRL</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="stats-section" style={{ marginBottom: '2rem' }}>
+        <div className="stats-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: '1rem' 
+        }}>
+          <div className="stat-card" style={{ 
+            background: '#3498db', 
+            padding: '1rem', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <h3>{stats.total}</h3>
+            <p>Total Reports</p>
+          </div>
+          <div className="stat-card" style={{ 
+            background: '#27ae60', 
+            padding: '1rem', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <h3>{stats.approved}</h3>
+            <p>Approved</p>
+          </div>
+          <div className="stat-card" style={{ 
+            background: '#e74c3c', 
+            padding: '1rem', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <h3>{stats.pending}</h3>
+            <p>Pending</p>
+          </div>
+          <div className="stat-card" style={{ 
+            background: '#f39c12', 
+            padding: '1rem', 
+            borderRadius: '8px', 
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <h3>{stats.averageAttendance}</h3>
+            <p>Avg Attendance</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="report-actions" style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+        gap: '1.5rem' 
+      }}>
+        <div className="report-card" style={{ 
+          background: '#34495e', 
+          padding: '2rem', 
+          borderRadius: '8px', 
+          textAlign: 'center',
+          border: '1px solid #4a5f7a'
+        }}>
+          <h4 style={{ color: '#fff' }}>Generate Report</h4>
+          <p style={{ color: '#bdc3c7', marginBottom: '1.5rem' }}>
+            {filters.reportType === 'performance' && 'Detailed performance analysis with ratings and feedback'}
+            {filters.reportType === 'attendance' && 'Student attendance statistics and trends'}
+            {filters.reportType === 'faculty' && 'Complete faculty performance overview'}
+            {filters.reportType === 'assignment' && 'Course and lecturer assignment overview'}
+            {filters.reportType === 'complaint' && 'Complaint analysis and resolution statistics'}
+          </p>
+          <button 
+            onClick={handleGenerate}
+            disabled={loading}
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+          >
+            {loading ? 'Generating...' : `Generate ${filters.reportType.charAt(0).toUpperCase() + filters.reportType.slice(1)} Report`}
+          </button>
+        </div>
+
+        <div className="report-info" style={{ 
+          background: '#34495e', 
+          padding: '2rem', 
+          borderRadius: '8px',
+          border: '1px solid #4a5f7a'
+        }}>
+          <h4 style={{ color: '#fff', marginBottom: '1rem' }}>Report Information</h4>
+          <div style={{ color: '#bdc3c7' }}>
+            <p><strong>Report Type:</strong> {filters.reportType}</p>
+            <p><strong>Date Range:</strong> {filters.startDate || 'Any'} to {filters.endDate || 'Any'}</p>
+            <p><strong>Status Filter:</strong> {filters.status || 'All'}</p>
+            <p><strong>Total Records:</strong> {stats.total} reports</p>
+            <p><strong>User Role:</strong> {user.role}</p>
+            <p><strong>Faculty:</strong> {user.faculty || 'All'}</p>
+          </div>
+        </div>
+      </div>
+
+      {user.role === 'pl' && assignments && assignments.length > 0 && (
+        <div className="assignment-stats" style={{ 
+          marginTop: '2rem', 
+          background: '#2c3e50', 
+          padding: '1.5rem', 
+          borderRadius: '8px' 
+        }}>
+          <h4 style={{ color: '#fff', marginBottom: '1rem' }}>Assignment Statistics</h4>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', 
+            gap: '1rem',
+            color: '#ecf0f1'
+          }}>
+            <div>
+              <strong>Total Assignments:</strong> {assignments.length}
+            </div>
+            <div>
+              <strong>Lecturer Assignments:</strong> {assignments.filter(a => a.assignment_type === 'regular').length}
+            </div>
+            <div>
+              <strong>Principal Assignments:</strong> {assignments.filter(a => a.assignment_type === 'principal').length}
+            </div>
+            <div>
+              <strong>Unique Courses:</strong> {new Set(assignments.map(a => a.course_id)).size}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1388,4 +1761,4 @@ const MyComplaintsTabLecturer = ({ complaints, user }) => {
   );
 };
 
-export default Dashboard;
+export default EnhancedDashboard;
