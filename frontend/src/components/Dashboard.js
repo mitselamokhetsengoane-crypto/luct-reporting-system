@@ -266,7 +266,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
     }));
   };
 
-  // Complaint Functions - FIXED
+  // Complaint Functions - UPDATED FOR ALL USERS
   const openComplaintModal = () => {
     setComplaintForm({
       title: '',
@@ -334,7 +334,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
     }));
   };
 
-  // Report Generation Functions - FIXED
+  // Report Generation Functions
   const handleGenerateReport = async (reportType, filters = {}) => {
     setReportGenerationLoading(true);
     try {
@@ -434,20 +434,45 @@ const EnhancedDashboard = ({ user, onLogout }) => {
     }
   };
 
+  // UPDATED: Enhanced available targets for ALL users
   const getAvailableTargets = () => {
-    switch (user.role) {
-      case 'student':
-        return availableUsers.filter(u => u.role === 'lecturer' || u.role === 'principal_lecturer');
-      case 'lecturer':
-      case 'principal_lecturer':
-        return availableUsers.filter(u => u.role === 'prl' && u.id !== user.id);
-      case 'prl':
-        return availableUsers.filter(u => u.role === 'pl' && u.id !== user.id);
-      case 'pl':
-        return availableUsers.filter(u => u.role === 'fmg' && u.id !== user.id);
-      default:
-        return [];
+    // Filter out current user (can't complain against yourself)
+    const filteredUsers = availableUsers.filter(u => u.id !== user.id);
+    
+    // Students can complain against lecturers, PRL, PL, FMG
+    if (user.role === 'student') {
+      return filteredUsers.filter(u => 
+        ['lecturer', 'principal_lecturer', 'prl', 'pl', 'fmg'].includes(u.role)
+      );
     }
+    
+    // Lecturers can complain against PRL, PL, FMG, other lecturers
+    if (user.role === 'lecturer' || user.role === 'principal_lecturer') {
+      return filteredUsers.filter(u => 
+        ['prl', 'pl', 'fmg', 'lecturer', 'principal_lecturer'].includes(u.role)
+      );
+    }
+    
+    // PRL can complain against PL, FMG, other PRL
+    if (user.role === 'prl') {
+      return filteredUsers.filter(u => 
+        ['pl', 'fmg', 'prl'].includes(u.role)
+      );
+    }
+    
+    // PL can complain against FMG, other PL
+    if (user.role === 'pl') {
+      return filteredUsers.filter(u => 
+        ['fmg', 'pl'].includes(u.role)
+      );
+    }
+    
+    // FMG can complain against other FMG
+    if (user.role === 'fmg') {
+      return filteredUsers.filter(u => u.role === 'fmg');
+    }
+    
+    return filteredUsers;
   };
 
   if (loading) {
@@ -552,7 +577,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
         </div>
       )}
 
-      {/* Complaint Modal - FIXED */}
+      {/* Complaint Modal - UPDATED FOR ALL USERS */}
       {showComplaintModal && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -608,7 +633,8 @@ const EnhancedDashboard = ({ user, onLogout }) => {
                   <option value="student_lecturer">Against Lecturer</option>
                   <option value="lecturer_prl">Against Program Review Leader</option>
                   <option value="prl_pl">Against Program Leader</option>
-                  <option value="faculty_issue">Faculty Issue</option>
+                  <option value="pl_fmg">Against Faculty Management</option>
+                  <option value="general">General Issue</option>
                 </select>
               </div>
 
@@ -647,11 +673,10 @@ const EnhancedDashboard = ({ user, onLogout }) => {
           <button onClick={loadDashboardData} className="btn btn-outline">
             Refresh Data
           </button>
-          {user.role === 'student' && (
-            <button onClick={openComplaintModal} className="btn btn-primary">
-              File Complaint
-            </button>
-          )}
+          {/* UPDATED: File Complaint button visible to ALL users */}
+          <button onClick={openComplaintModal} className="btn btn-primary">
+            File Complaint
+          </button>
           <button onClick={onLogout} className="btn btn-secondary">
             Logout
           </button>
@@ -711,7 +736,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
         )}
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs - UPDATED FOR ALL USERS */}
       <div className="dashboard-tabs">
         <button 
           className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
@@ -742,13 +767,6 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             >
               Class Reports
             </button>
-
-            <button 
-              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
-              onClick={() => setActiveTab('my-complaints')}
-            >
-              My Complaints
-            </button>
           </>
         )}
 
@@ -766,12 +784,6 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             >
               Generate Reports
             </button>
-            <button 
-              className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
-              onClick={() => setActiveTab('my-complaints')}
-            >
-              My Complaints
-            </button>
           </>
         )}
 
@@ -787,7 +799,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
               className={`tab-btn ${activeTab === 'complaints' ? 'active' : ''}`}
               onClick={() => setActiveTab('complaints')}
             >
-              Complaints
+              All Complaints
             </button>
             {user.role === 'pl' && (
               <button 
@@ -805,9 +817,17 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             </button>
           </>
         )}
+
+        {/* UPDATED: My Complaints tab visible to ALL users */}
+        <button 
+          className={`tab-btn ${activeTab === 'my-complaints' ? 'active' : ''}`}
+          onClick={() => setActiveTab('my-complaints')}
+        >
+          My Complaints
+        </button>
       </div>
 
-      {/* Tab Content */}
+      {/* Tab Content - UPDATED FOR ALL USERS */}
       <div className="tab-content">
         {activeTab === 'overview' && (
           <OverviewTab 
@@ -847,7 +867,7 @@ const EnhancedDashboard = ({ user, onLogout }) => {
           />
         )}
 
-        {activeTab === 'my-complaints' && user.role === 'student' && (
+        {activeTab === 'my-complaints' && (
           <MyComplaintsTab 
             complaints={dashboardData.complaints}
             user={user}
@@ -896,19 +916,12 @@ const EnhancedDashboard = ({ user, onLogout }) => {
             hasRatedReport={hasRatedReport}
           />
         )}
-
-        {activeTab === 'my-complaints' && (user.role === 'lecturer' || user.role === 'principal_lecturer') && (
-          <MyComplaintsTabLecturer 
-            complaints={dashboardData.complaints}
-            user={user}
-          />
-        )}
       </div>
     </div>
   );
 };
 
-// Report Generation Component - FIXED
+// Report Generation Component
 const ReportGenerationTab = ({ user, reports, assignments, onGenerateReport, loading }) => {
   const [filters, setFilters] = useState({
     startDate: '',
@@ -1366,6 +1379,7 @@ const ClassReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport 
   );
 };
 
+// UPDATED: MyComplaintsTab now works for ALL users
 const MyComplaintsTab = ({ complaints, user, onNewComplaint }) => {
   const complaintsArray = Array.isArray(complaints) ? complaints : [];
   
@@ -1461,11 +1475,10 @@ const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRa
       <div className="tab-header">
         <h2>Quick Overview</h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          {user.role === 'student' && (
-            <button onClick={onFileComplaint} className="btn btn-primary">
-              File Complaint
-            </button>
-          )}
+          {/* UPDATED: File Complaint button visible to ALL users */}
+          <button onClick={onFileComplaint} className="btn btn-primary">
+            File Complaint
+          </button>
           <button onClick={onRefresh} className="btn btn-secondary">
             Refresh Data
           </button>
@@ -1529,7 +1542,18 @@ const OverviewTab = ({ user, data, onRefresh, onRateReport, canRateReport, hasRa
             </div>
           ))}
           
-          {((!Array.isArray(data.reports) || data.reports.length === 0) && (!Array.isArray(data.ratings) || data.ratings.length === 0)) && (
+          {Array.isArray(data.complaints) && data.complaints.slice(0, 3).map(complaint => (
+            <div key={complaint.id} className="activity-item">
+              <div className="activity-content">
+                <p><strong>Complaint Filed</strong> - {complaint.title}</p>
+                <small>Status: {complaint.status} • {new Date(complaint.created_at).toLocaleDateString()}</small>
+              </div>
+            </div>
+          ))}
+          
+          {((!Array.isArray(data.reports) || data.reports.length === 0) && 
+            (!Array.isArray(data.ratings) || data.ratings.length === 0) &&
+            (!Array.isArray(data.complaints) || data.complaints.length === 0)) && (
             <p className="no-data">No recent activity</p>
           )}
         </div>
@@ -1738,47 +1762,6 @@ const MyReportsTab = ({ reports, onRateReport, canRateReport, hasRatedReport }) 
         {reportsArray.length === 0 && (
           <div className="no-data">
             <p>No reports found</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const MyComplaintsTabLecturer = ({ complaints, user }) => {
-  const complaintsArray = Array.isArray(complaints) ? complaints : [];
-  
-  return (
-    <div className="my-complaints-tab">
-      <h2>My Complaints</h2>
-      <div className="data-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Against</th>
-              <th>Date</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {complaintsArray.map(complaint => (
-              <tr key={complaint.id}>
-                <td>{complaint.title}</td>
-                <td>{complaint.complaint_against_name}</td>
-                <td>{new Date(complaint.created_at).toLocaleDateString()}</td>
-                <td>
-                  <span className={`status-${complaint.status}`}>
-                    {complaint.status.toUpperCase()}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {complaintsArray.length === 0 && (
-          <div className="no-data">
-            <p>No complaints found</p>
           </div>
         )}
       </div>
