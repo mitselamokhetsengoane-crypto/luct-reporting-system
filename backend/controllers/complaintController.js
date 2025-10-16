@@ -1,12 +1,12 @@
 const pool = require('../config/database');
 
 const complaintController = {
-  // ✅ FIXED: Get available users for complaints - aligned with your schema
+  // ✅ FIXED: Get available users for complaints - completely removed status reference
   getAvailableUsers: async (req, res) => {
     try {
       console.log('Fetching available users for complaints for user:', req.user.id, 'Role:', req.user.role);
       
-      // Get all users except the current user (no status column in your schema)
+      // Get all users except the current user (NO STATUS COLUMN REFERENCE)
       const result = await pool.query(`
         SELECT id, name, role, faculty, email
         FROM users 
@@ -39,7 +39,7 @@ const complaintController = {
     }
   },
 
-  // ✅ Create complaint - aligned with your schema
+  // ✅ Create complaint
   createComplaint: async (req, res) => {
     try {
       const { 
@@ -233,17 +233,15 @@ const complaintController = {
       if (status) {
         query += ` AND c.status = $${queryParams.length + 1}`;
         queryParams.push(status);
-        query += ` ORDER BY c.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-        queryParams.push(parseInt(limit), offset);
-      } else {
-        query += ` ORDER BY c.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-        queryParams.push(parseInt(limit), offset);
       }
+
+      query += ` ORDER BY c.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+      queryParams.push(parseInt(limit), offset);
 
       const result = await pool.query(query, queryParams);
 
       // Get total count
-      const countQuery = `SELECT COUNT(*) FROM complaints WHERE complaint_against_id = $1`;
+      let countQuery = `SELECT COUNT(*) FROM complaints WHERE complaint_against_id = $1`;
       const countParams = [req.user.id];
       if (status) {
         countQuery += ` AND status = $2`;
@@ -273,7 +271,220 @@ const complaintController = {
     }
   },
 
-  // ✅ Generate complaint report - uses existing tables only
+  // ✅ Get all complaints (for admin roles)
+  getAllComplaints: async (req, res) => {
+    try {
+      if (!['pl', 'prl', 'fmg'].includes(req.user.role)) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Access denied. Only PL, PRL, and FMG can view all complaints.' 
+        });
+      }
+
+      const { page = 1, limit = 10, status, complaint_type } = req.query;
+      const offset = (page - 1) * limit;
+
+      let query = `
+        SELECT 
+          c.*, 
+          comp.name AS complainant_name,
+          comp.role AS complainant_role,
+          against.name AS complaint_against_name,
+          against.role AS complaint_against_role
+        FROM complaints c
+        LEFT JOIN users comp ON c.complainant_id = comp.id
+        LEFT JOIN users against ON c.complaint_against_id = against.id
+        WHERE 1=1
+      `;
+      
+      const queryParams = [];
+      let paramCount = 0;
+
+      // Add filters
+      if (status) {
+        paramCount++;
+        query += ` AND c.status = $${paramCount}`;
+        queryParams.push(status);
+      }
+
+      if (complaint_type) {
+        paramCount++;
+        query += ` AND c.complaint_type = $${paramCount}`;
+        queryParams.push(complaint_type);
+      }
+
+      // Add faculty filter for PL and PRL
+      if (req.user.faculty && ['pl', 'prl'].includes(req.user.role)) {
+        paramCount++;
+        query += ` AND comp.faculty = $${paramCount}`;
+        queryParams.push(req.user.faculty);
+      }
+
+      query += ` ORDER BY c.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      queryParams.push(parseInt(limit), offset);
+
+      const result = await pool.query(query, queryParams);
+
+      // Get total count
+      let countQuery = `SELECT COUNT(*) FROM complaints WHERE 1=1`;
+      const countParams = [];
+      let countParamCount = 0;
+
+      if (status) {
+        countParamCount++;
+        countQuery += ` AND status = $${countParamCount}`;
+        countParams.push(status);
+      }
+
+      if (complaint_type) {
+        countParamCount++;
+        countQuery += ` AND complaint_type = $${countParamCount}`;
+        countParams.push(complaint_type);
+      }
+
+      if (req.user.faculty && ['pl', 'prl'].includes(req.user.role)) {
+        countParamCount++;
+        countQuery += ` AND EXISTS (SELECT 1 FROM users u WHERE u.id = complaints.complainant_id AND u.faculty = $${countParamCount})`;
+        countParams.push(req.user.faculty);
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalCount = parseInt(countResult.rows[0].count);
+
+      res.json({
+        success: true,
+        complaints: result.rows,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching all complaints:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Server error while fetching complaints', 
+        error: error.message 
+      });
+    }
+  },
+
+  // ✅ Get specific complaint by ID
+  getComplaintById: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const result = await pool.query(`
+        SELECT 
+          c.*,
+          comp.name AS complainant_name,
+          comp.role AS complainant_role,
+          against.name AS complaint_against_name,
+          against.role AS complaint_against_role
+        FROM complaints c
+        LEFT JOIN users comp ON c.complainant_id = comp.id
+        LEFT JOIN users against ON c.complaint_against_id = against.id
+        WHERE c.id = $1
+      `, [id]);
+
+      if (!result.rows.length) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Complaint not found' 
+        });
+      }
+
+      const complaint = result.rows[0];
+
+      // Check if user has permission to view this complaint
+      const canView = complaint.complainant_id === req.user.id || 
+                     complaint.complaint_against_id === req.user.id || 
+                     ['pl', 'prl', 'fmg'].includes(req.user.role);
+
+      if (!canView) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Access denied to this complaint' 
+        });
+      }
+
+      res.json({
+        success: true,
+        complaint: complaint
+      });
+    } catch (error) {
+      console.error('Error fetching complaint:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Server error while fetching complaint', 
+        error: error.message 
+      });
+    }
+  },
+
+  // ✅ Respond to a complaint
+  respondToComplaint: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { response } = req.body;
+
+      if (!response?.trim()) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Response text is required' 
+        });
+      }
+
+      const complaintCheck = await pool.query(
+        'SELECT * FROM complaints WHERE id = $1', 
+        [id]
+      );
+      
+      if (!complaintCheck.rows.length) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Complaint not found' 
+        });
+      }
+
+      const complaint = complaintCheck.rows[0];
+
+      // Check authorization: target user or admin roles can respond
+      const canRespond = complaint.complaint_against_id === req.user.id || 
+                        ['pl', 'prl', 'fmg'].includes(req.user.role);
+
+      if (!canRespond) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Not authorized to respond to this complaint' 
+        });
+      }
+
+      const result = await pool.query(`
+        UPDATE complaints
+        SET response = $1, responded_by = $2, responded_at = CURRENT_TIMESTAMP, status = 'resolved'
+        WHERE id = $3
+        RETURNING *
+      `, [response.trim(), req.user.id, id]);
+
+      res.json({ 
+        success: true,
+        message: 'Response submitted successfully.', 
+        complaint: result.rows[0] 
+      });
+    } catch (error) {
+      console.error('Error responding to complaint:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Server error while responding to complaint', 
+        error: error.message 
+      });
+    }
+  },
+
+  // ✅ Generate complaint report
   generateComplaintReport: async (req, res) => {
     try {
       const { startDate, endDate, status, complaint_type } = req.body;
@@ -350,56 +561,6 @@ const complaintController = {
       res.status(500).json({ 
         success: false,
         message: 'Server error while generating complaint report', 
-        error: error.message 
-      });
-    }
-  },
-
-  // ✅ Get user's generated reports from existing reports table
-  getGeneratedReports: async (req, res) => {
-    try {
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * limit;
-
-      // Use existing reports table to track generated reports
-      const result = await pool.query(`
-        SELECT 
-          r.*,
-          c.course_name,
-          cl.class_name,
-          u.name as lecturer_name,
-          'lecture_report' as report_type,
-          'Lecture Report' as report_name
-        FROM reports r
-        JOIN courses c ON r.course_id = c.id
-        JOIN classes cl ON r.class_id = cl.id
-        JOIN users u ON r.lecturer_id = u.id
-        WHERE r.lecturer_id = $1
-        ORDER BY r.created_at DESC
-        LIMIT $2 OFFSET $3
-      `, [req.user.id, parseInt(limit), offset]);
-
-      const countResult = await pool.query(
-        'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1',
-        [req.user.id]
-      );
-      const totalCount = parseInt(countResult.rows[0].count);
-
-      res.json({
-        success: true,
-        reports: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit)
-        }
-      });
-    } catch (error) {
-      console.error('Error fetching generated reports:', error);
-      res.status(500).json({ 
-        success: false,
-        message: 'Server error while fetching generated reports', 
         error: error.message 
       });
     }

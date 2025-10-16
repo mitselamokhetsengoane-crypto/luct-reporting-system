@@ -1,7 +1,6 @@
 const pool = require('../config/database');
 
 const reportController = {
-  // ✅ Create a new report - aligned with your schema
   createReport: async (req, res) => {
     try {
       const {
@@ -10,7 +9,6 @@ const reportController = {
         learning_outcomes, recommendations
       } = req.body;
 
-      // Validate required fields
       if (!faculty || !class_id || !week_number || !date_of_lecture || !course_id || 
           !students_present || !venue || !scheduled_time || !topic_taught || !learning_outcomes) {
         return res.status(400).json({ 
@@ -45,13 +43,9 @@ const reportController = {
     }
   },
 
-  // ✅ Get reports created by the current lecturer
   getMyReports: async (req, res) => {
     try {
-      const { page = 1, limit = 10, status } = req.query;
-      const offset = (page - 1) * limit;
-
-      let query = `
+      const result = await pool.query(`
         SELECT 
           r.*,
           c.course_name,
@@ -62,40 +56,12 @@ const reportController = {
         JOIN classes cl ON r.class_id = cl.id
         JOIN users u ON r.lecturer_id = u.id
         WHERE r.lecturer_id = $1
-      `;
-      
-      const queryParams = [req.user.id];
-
-      if (status) {
-        query += ` AND r.status = $${queryParams.length + 1}`;
-        queryParams.push(status);
-      }
-
-      query += ` ORDER BY r.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-      queryParams.push(parseInt(limit), offset);
-
-      const result = await pool.query(query, queryParams);
-
-      // Get total count
-      let countQuery = `SELECT COUNT(*) FROM reports WHERE lecturer_id = $1`;
-      const countParams = [req.user.id];
-      if (status) {
-        countQuery += ` AND status = $2`;
-        countParams.push(status);
-      }
-      
-      const countResult = await pool.query(countQuery, countParams);
-      const totalCount = parseInt(countResult.rows[0].count);
+        ORDER BY r.created_at DESC
+      `, [req.user.id]);
 
       res.json({
         success: true,
-        reports: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit)
-        }
+        reports: result.rows
       });
     } catch (error) {
       console.error('Error fetching reports:', error);
@@ -107,12 +73,9 @@ const reportController = {
     }
   },
 
-  // ✅ Get reports for a specific class
   getClassReports: async (req, res) => {
     try {
       const { classId } = req.params;
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * limit;
 
       const result = await pool.query(`
         SELECT 
@@ -124,24 +87,11 @@ const reportController = {
         JOIN users u ON r.lecturer_id = u.id
         WHERE r.class_id = $1
         ORDER BY r.created_at DESC
-        LIMIT $2 OFFSET $3
-      `, [classId, parseInt(limit), offset]);
-
-      const countResult = await pool.query(
-        'SELECT COUNT(*) FROM reports WHERE class_id = $1',
-        [classId]
-      );
-      const totalCount = parseInt(countResult.rows[0].count);
+      `, [classId]);
 
       res.json({
         success: true,
-        reports: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit)
-        }
+        reports: result.rows
       });
     } catch (error) {
       console.error('Error fetching class reports:', error);
@@ -153,7 +103,6 @@ const reportController = {
     }
   },
 
-  // ✅ Get reports pending approval
   getPendingApprovalReports: async (req, res) => {
     try {
       if (!['prl', 'pl', 'fmg'].includes(req.user.role)) {
@@ -162,9 +111,6 @@ const reportController = {
           message: 'Only PRL, PL, or FMG can view pending approval reports' 
         });
       }
-
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * limit;
 
       let query = `
         SELECT 
@@ -181,37 +127,18 @@ const reportController = {
       
       const queryParams = [];
 
-      // Add faculty filter for PL and PRL
       if (req.user.faculty && ['pl', 'prl'].includes(req.user.role)) {
         query += ` AND r.faculty = $1`;
         queryParams.push(req.user.faculty);
       }
 
-      query += ` ORDER BY r.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-      queryParams.push(parseInt(limit), offset);
+      query += ` ORDER BY r.created_at DESC`;
 
       const result = await pool.query(query, queryParams);
 
-      // Get total count
-      let countQuery = `SELECT COUNT(*) FROM reports WHERE status LIKE 'pending%'`;
-      const countParams = [];
-      if (req.user.faculty && ['pl', 'prl'].includes(req.user.role)) {
-        countQuery += ` AND faculty = $1`;
-        countParams.push(req.user.faculty);
-      }
-      
-      const countResult = await pool.query(countQuery, countParams);
-      const totalCount = parseInt(countResult.rows[0].count);
-
       res.json({
         success: true,
-        reports: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit)
-        }
+        reports: result.rows
       });
     } catch (error) {
       console.error('Error fetching pending approval reports:', error);
@@ -223,7 +150,6 @@ const reportController = {
     }
   },
 
-  // ✅ Sign report (student)
   signReport: async (req, res) => {
     try {
       const { id } = req.params;
@@ -288,7 +214,6 @@ const reportController = {
     }
   },
 
-  // ✅ Approve report (PRL/PL)
   approveReport: async (req, res) => {
     try {
       const { id } = req.params;
@@ -338,7 +263,6 @@ const reportController = {
     }
   },
 
-  // ✅ Get specific report by ID
   getReportById: async (req, res) => {
     try {
       const { id } = req.params;
@@ -377,7 +301,7 @@ const reportController = {
     }
   },
 
-  // ✅ Generate performance report - uses existing tables only
+  // ✅ REPORT GENERATION ENDPOINTS
   generatePerformanceReport: async (req, res) => {
     try {
       const filters = req.body;
@@ -407,7 +331,6 @@ const reportController = {
     }
   },
 
-  // ✅ Generate attendance report - uses existing tables only
   generateAttendanceReport: async (req, res) => {
     try {
       const filters = req.body;
@@ -437,7 +360,6 @@ const reportController = {
     }
   },
 
-  // ✅ Generate faculty report - uses existing tables only
   generateFacultyReport: async (req, res) => {
     try {
       const filters = req.body;
@@ -467,14 +389,11 @@ const reportController = {
     }
   },
 
-  // ✅ Get all generated reports (lecture reports) for user
+  // ✅ FIXED: Get generated reports - properly returns lecture reports
   getGeneratedReports: async (req, res) => {
     try {
-      const { page = 1, limit = 10 } = req.query;
-      const offset = (page - 1) * limit;
-
-      // For lecturers: show their lecture reports
-      // For PRL/PL/FMG: show reports from their faculty
+      console.log('Fetching generated reports for user:', req.user.id, 'Role:', req.user.role);
+      
       let query, queryParams;
 
       if (req.user.role === 'lecturer') {
@@ -493,9 +412,9 @@ const reportController = {
           JOIN users u ON r.lecturer_id = u.id
           WHERE r.lecturer_id = $1
           ORDER BY r.created_at DESC
-          LIMIT $2 OFFSET $3
+          LIMIT 50
         `;
-        queryParams = [req.user.id, parseInt(limit), offset];
+        queryParams = [req.user.id];
       } else if (['prl', 'pl'].includes(req.user.role)) {
         query = `
           SELECT 
@@ -512,9 +431,9 @@ const reportController = {
           JOIN users u ON r.lecturer_id = u.id
           WHERE r.faculty = $1
           ORDER BY r.created_at DESC
-          LIMIT $2 OFFSET $3
+          LIMIT 50
         `;
-        queryParams = [req.user.faculty, parseInt(limit), offset];
+        queryParams = [req.user.faculty];
       } else if (req.user.role === 'fmg') {
         query = `
           SELECT 
@@ -530,9 +449,9 @@ const reportController = {
           JOIN classes cl ON r.class_id = cl.id
           JOIN users u ON r.lecturer_id = u.id
           ORDER BY r.created_at DESC
-          LIMIT $1 OFFSET $2
+          LIMIT 50
         `;
-        queryParams = [parseInt(limit), offset];
+        queryParams = [];
       } else {
         return res.status(403).json({ 
           success: false,
@@ -541,32 +460,11 @@ const reportController = {
       }
 
       const result = await pool.query(query, queryParams);
-
-      // Get total count
-      let countQuery;
-      if (req.user.role === 'lecturer') {
-        countQuery = 'SELECT COUNT(*) FROM reports WHERE lecturer_id = $1';
-        queryParams = [req.user.id];
-      } else if (['prl', 'pl'].includes(req.user.role)) {
-        countQuery = 'SELECT COUNT(*) FROM reports WHERE faculty = $1';
-        queryParams = [req.user.faculty];
-      } else {
-        countQuery = 'SELECT COUNT(*) FROM reports';
-        queryParams = [];
-      }
-
-      const countResult = await pool.query(countQuery, queryParams);
-      const totalCount = parseInt(countResult.rows[0].count);
+      console.log(`Found ${result.rows.length} generated reports`);
 
       res.json({
         success: true,
-        reports: result.rows,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalCount,
-          totalPages: Math.ceil(totalCount / limit)
-        }
+        reports: result.rows
       });
     } catch (error) {
       console.error('Error fetching generated reports:', error);
@@ -579,7 +477,7 @@ const reportController = {
   }
 };
 
-// Database query functions - using only existing tables
+// Database query functions
 async function getPerformanceReportData(filters, user) {
   const { startDate, endDate, faculty, course_id, class_id } = filters;
   
